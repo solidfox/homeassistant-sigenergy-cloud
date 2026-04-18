@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 
-from .entity import SigenEnergyEntity, SigenSettingsEntity
+from .entity import SigenSettingsEntity
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from .coordinator import SigenEnergyCoordinator, SigenSettingsCoordinator
+    from .coordinator import SigenSettingsCoordinator
     from .data import SigenConfigEntry
 
 
@@ -32,9 +32,7 @@ async def async_setup_entry(
     ]
 
     if data.client.dc_sn:
-        entities.append(
-            SigenEVChargeSwitch(data.energy_coordinator, station_id, data.client)
-        )
+        entities.append(SigenEVChargeSwitch(data.settings_coordinator, station_id, data.client))
 
     async_add_entities(entities)
 
@@ -123,11 +121,11 @@ class SigenBatteryExportSwitch(SigenSettingsEntity, SwitchEntity):
         await self.coordinator.async_request_refresh()
 
 
-class SigenEVChargeSwitch(SigenEnergyEntity, SwitchEntity):
+class SigenEVChargeSwitch(SigenSettingsEntity, SwitchEntity):
     """Start or stop EV charging on the DC charger.
 
-    State is derived from the energy coordinator's is_charging field
-    (populated by the DC charger status endpoint every 30 s).
+    State is not tracked here — use the local Modbus dc_charger_running_state
+    sensor for actual charging status. This entity is write-only.
     """
 
     _attr_translation_key = "ev_charge_enabled"
@@ -136,7 +134,7 @@ class SigenEVChargeSwitch(SigenEnergyEntity, SwitchEntity):
 
     def __init__(
         self,
-        coordinator: SigenEnergyCoordinator,
+        coordinator: SigenSettingsCoordinator,
         station_id: str,
         client: Any,
     ) -> None:
@@ -145,9 +143,7 @@ class SigenEVChargeSwitch(SigenEnergyEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("is_charging")
+        return None  # State read from Modbus dc_charger_running_state
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._client.set_charge_enabled(True)

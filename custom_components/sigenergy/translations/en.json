@@ -39,29 +39,6 @@
     }
   },
   "entity": {
-    "sensor": {
-      "pv_power": {
-        "name": "PV Power"
-      },
-      "battery_soc": {
-        "name": "Battery SOC"
-      },
-      "battery_power": {
-        "name": "Battery Power"
-      },
-      "grid_import_power": {
-        "name": "Grid Import Power"
-      },
-      "grid_export_power": {
-        "name": "Grid Export Power"
-      },
-      "load_power": {
-        "name": "Home Load Power"
-      },
-      "ev_power": {
-        "name": "EV Charge Power"
-      }
-    },
     "number": {
       "export_limit": {
         "name": "Grid Export Limit"

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from .const import CONF_REGION, DOMAIN, LOGGER
-from .coordinator import SigenEnergyCoordinator, SigenSettingsCoordinator
+from .coordinator import SigenSettingsCoordinator
 from .data import SigenData
 from .sigen import Sigen
 from .sigen.exceptions import SigenAuthError, SigenError
@@ -20,7 +19,6 @@ if TYPE_CHECKING:
     from .data import SigenConfigEntry
 
 PLATFORMS: list[Platform] = [
-    Platform.SENSOR,
     Platform.NUMBER,
     Platform.SWITCH,
     Platform.SELECT,
@@ -46,15 +44,11 @@ async def async_setup_entry(
     except SigenError as exc:
         raise ConfigEntryNotReady(exc) from exc
 
-    energy_coordinator = SigenEnergyCoordinator(hass, client)
     settings_coordinator = SigenSettingsCoordinator(hass, client)
-
-    await energy_coordinator.async_config_entry_first_refresh()
     await settings_coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = SigenData(
         client=client,
-        energy_coordinator=energy_coordinator,
         settings_coordinator=settings_coordinator,
     )
 
