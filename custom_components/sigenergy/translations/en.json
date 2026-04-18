@@ -1,0 +1,116 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Sigenergy Cloud",
+        "description": "Enter your Sigenergy cloud account credentials.",
+        "data": {
+          "username": "Email address",
+          "password": "Password",
+          "region": "Region"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Sigenergy",
+        "description": "Enter your password for {username}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "auth": "Invalid username or password.",
+      "connection": "Unable to connect to Sigenergy Cloud. Check your region setting.",
+      "unknown": "Unexpected error — check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This Sigenergy station is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "selector": {
+    "region": {
+      "options": {
+        "eu": "Europe",
+        "cn": "China",
+        "apac": "Asia-Pacific",
+        "us": "United States"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pv_power": {
+        "name": "PV Power"
+      },
+      "battery_soc": {
+        "name": "Battery SOC"
+      },
+      "battery_power": {
+        "name": "Battery Power"
+      },
+      "grid_import_power": {
+        "name": "Grid Import Power"
+      },
+      "grid_export_power": {
+        "name": "Grid Export Power"
+      },
+      "load_power": {
+        "name": "Home Load Power"
+      },
+      "ev_power": {
+        "name": "EV Charge Power"
+      }
+    },
+    "number": {
+      "export_limit": {
+        "name": "Grid Export Limit"
+      },
+      "import_limit": {
+        "name": "Grid Import Limit"
+      },
+      "backup_reserve": {
+        "name": "Backup Reserve"
+      },
+      "battery_charge_soc": {
+        "name": "Battery Charge Limit"
+      },
+      "battery_discharge_soc": {
+        "name": "Battery Discharge Floor"
+      },
+      "battery_peak_shaving_soc": {
+        "name": "Peak Shaving SOC Floor"
+      },
+      "battery_backup_soc": {
+        "name": "Battery Backup SOC"
+      }
+    },
+    "switch": {
+      "export_limit_enabled": {
+        "name": "Grid Export Limit"
+      },
+      "import_limit_enabled": {
+        "name": "Grid Import Limit"
+      },
+      "battery_export_enabled": {
+        "name": "Battery Export to Grid"
+      },
+      "ev_charge_enabled": {
+        "name": "EV Charging"
+      }
+    },
+    "select": {
+      "operational_mode": {
+        "name": "Operating Mode"
+      }
+    },
+    "button": {
+      "start_v2x_discharge": {
+        "name": "Start V2X Discharge"
+      },
+      "stop_v2x_discharge": {
+        "name": "Stop V2X Discharge"
+      }
+    }
+  }
+}
