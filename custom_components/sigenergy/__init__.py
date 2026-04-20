@@ -8,7 +8,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from .const import CONF_REGION, DOMAIN, LOGGER
-from .coordinator import SigenSettingsCoordinator
+from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
 from .data import SigenData
 from .sigen import Sigen
 from .sigen.exceptions import SigenAuthError, SigenError
@@ -19,10 +19,10 @@ if TYPE_CHECKING:
     from .data import SigenConfigEntry
 
 PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
     Platform.NUMBER,
     Platform.SWITCH,
     Platform.SELECT,
-    Platform.BUTTON,
 ]
 
 
@@ -45,11 +45,15 @@ async def async_setup_entry(
         raise ConfigEntryNotReady(exc) from exc
 
     settings_coordinator = SigenSettingsCoordinator(hass, client)
+    status_coordinator = SigenStatusCoordinator(hass, client)
+
     await settings_coordinator.async_config_entry_first_refresh()
+    await status_coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = SigenData(
         client=client,
         settings_coordinator=settings_coordinator,
+        status_coordinator=status_coordinator,
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

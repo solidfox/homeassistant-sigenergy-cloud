@@ -39,15 +39,17 @@
     }
   },
   "entity": {
+    "sensor": {
+      "ev_power": {
+        "name": "EV Charge Power"
+      }
+    },
     "number": {
       "export_limit": {
         "name": "Grid Export Limit"
       },
       "import_limit": {
         "name": "Grid Import Limit"
-      },
-      "backup_reserve": {
-        "name": "Backup Reserve"
       },
       "battery_charge_soc": {
         "name": "Battery Charge Limit"
@@ -60,6 +62,9 @@
       },
       "battery_backup_soc": {
         "name": "Battery Backup SOC"
+      },
+      "v2x_power_cap": {
+        "name": "V2X Discharge Power Cap"
       }
     },
     "switch": {
@@ -74,19 +79,14 @@
       },
       "ev_charge_enabled": {
         "name": "EV Charging"
+      },
+      "v2x_discharge": {
+        "name": "V2X Discharge"
       }
     },
     "select": {
       "operational_mode": {
         "name": "Operating Mode"
-      }
-    },
-    "button": {
-      "start_v2x_discharge": {
-        "name": "Start V2X Discharge"
-      },
-      "stop_v2x_discharge": {
-        "name": "Stop V2X Discharge"
       }
     }
   }

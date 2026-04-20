@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
-    from .coordinator import SigenSettingsCoordinator
+    from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
     from .sigen import Sigen
 
 type SigenConfigEntry = ConfigEntry[SigenData]
@@ -20,3 +20,4 @@ class SigenData:
 
     client: Sigen
     settings_coordinator: SigenSettingsCoordinator
+    status_coordinator: SigenStatusCoordinator

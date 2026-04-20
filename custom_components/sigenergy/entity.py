@@ -1,4 +1,4 @@
-"""Base entity class for Sigenergy."""
+"""Base entity classes for Sigenergy."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import SigenSettingsCoordinator
+from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
 
 
 def _device_info(station_id: str) -> DeviceInfo:
@@ -25,6 +25,24 @@ class SigenSettingsEntity(CoordinatorEntity[SigenSettingsCoordinator]):
     def __init__(
         self,
         coordinator: SigenSettingsCoordinator,
+        station_id: str,
+        key: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._station_id = station_id
+        self._key = key
+        self._attr_unique_id = f"{station_id}_{key}"
+        self._attr_device_info = _device_info(station_id)
+
+
+class SigenStatusEntity(CoordinatorEntity[SigenStatusCoordinator]):
+    """Entity tied to the 30-second status coordinator."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: SigenStatusCoordinator,
         station_id: str,
         key: str,
     ) -> None:
