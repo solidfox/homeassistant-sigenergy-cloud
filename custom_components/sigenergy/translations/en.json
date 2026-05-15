@@ -39,9 +39,127 @@
     }
   },
   "entity": {
+    "button": {
+      "start_v2x_discharge": {
+        "name": "Start Forced V2X Discharge"
+      },
+      "stop_v2x_discharge": {
+        "name": "Stop Forced V2X Discharge"
+      }
+    },
+    "binary_sensor": {
+      "dc_charger_plugged_in": {
+        "name": "Plugged In"
+      }
+    },
     "sensor": {
       "ev_power": {
         "name": "EV Charge Power"
+      },
+      "pv_power": {
+        "name": "PV Power"
+      },
+      "grid_power": {
+        "name": "Grid Power"
+      },
+      "load_power": {
+        "name": "Load Power"
+      },
+      "battery_power": {
+        "name": "Battery Power"
+      },
+      "battery_soc": {
+        "name": "Battery SOC"
+      },
+      "dc_charge_power": {
+        "name": "Charge Power"
+      },
+      "ev_soc": {
+        "name": "Vehicle SOC"
+      },
+      "secc_run_state": {
+        "name": "SECC State"
+      },
+      "dc_charger_status": {
+        "name": "Status"
+      },
+      "v2x_status": {
+        "name": "V2X Status",
+        "state": {
+          "off": "Off",
+          "pending": "Pending",
+          "manual": "Manual",
+          "bidirectional": "Bidirectional"
+        }
+      },
+      "dc_charger_session_energy_charged": {
+        "name": "Session Energy Charged"
+      },
+      "dc_charger_lifetime_energy_dispensed": {
+        "name": "Lifetime Energy Dispensed"
+      },
+      "dc_charger_current_session_started_at": {
+        "name": "Current Session Started"
+      },
+      "dc_charger_weekly_energy": {
+        "name": "Weekly Energy"
+      },
+      "dc_charger_monthly_energy": {
+        "name": "Monthly Energy"
+      },
+      "dc_charger_lifetime_energy": {
+        "name": "Lifetime Energy"
+      },
+      "dc_charger_total_energy_charged": {
+        "name": "Total Energy Charged"
+      },
+      "dc_charger_total_energy_discharged": {
+        "name": "Total Energy Discharged"
+      },
+      "dc_charger_active_alarm": {
+        "name": "Active Alarm"
+      },
+      "dc_charger_ocpp_link_status": {
+        "name": "OCPP Link"
+      },
+      "dc_charger_last_session": {
+        "name": "Last Session"
+      },
+      "dc_charger_last_session_record_id": {
+        "name": "Last Session ID"
+      },
+      "dc_charger_last_session_started": {
+        "name": "Last Session Started"
+      },
+      "dc_charger_last_session_ended": {
+        "name": "Last Session Ended"
+      },
+      "dc_charger_last_session_duration": {
+        "name": "Last Session Duration"
+      },
+      "dc_charger_last_session_energy_charged": {
+        "name": "Last Session Energy Charged"
+      },
+      "dc_charger_last_session_energy_discharged": {
+        "name": "Last Session Energy Discharged"
+      },
+      "dc_charger_last_session_start_soc": {
+        "name": "Last Session Start SOC"
+      },
+      "dc_charger_last_session_end_soc": {
+        "name": "Last Session End SOC"
+      },
+      "dc_charger_last_session_end_reason": {
+        "name": "Last Session Stop Reason"
+      },
+      "dc_charger_last_session_stop_code": {
+        "name": "Last Session Stop Code"
+      },
+      "dc_charger_last_session_alarm_code": {
+        "name": "Last Session Alarm Code"
+      },
+      "dc_charger_last_session_alarm_name": {
+        "name": "Last Session Alarm Name"
       }
     },
     "number": {
@@ -63,8 +181,26 @@
       "battery_backup_soc": {
         "name": "Battery Backup SOC"
       },
+      "dc_charger_max_power": {
+        "name": "Max Charge Power"
+      },
+      "dc_charger_stop_soc": {
+        "name": "Charge Cutoff SOC"
+      },
+      "dc_charger_max_discharge_power": {
+        "name": "Max Discharge Power"
+      },
+      "dc_charger_discharge_cutoff_soc": {
+        "name": "Discharge Cutoff SOC"
+      },
+      "dc_charger_battery_boost_cutoff_soc": {
+        "name": "Battery Boost Cutoff SOC"
+      },
       "v2x_power_cap": {
-        "name": "V2X Discharge Power Cap"
+        "name": "Forced V2X Power Cap"
+      },
+      "v2x_duration": {
+        "name": "Forced V2X Duration"
       }
     },
     "switch": {
@@ -77,16 +213,24 @@
       "battery_export_enabled": {
         "name": "Battery Export to Grid"
       },
-      "ev_charge_enabled": {
-        "name": "EV Charging"
+      "dc_charger_battery_boost": {
+        "name": "Battery Boost"
       },
-      "v2x_discharge": {
-        "name": "V2X Discharge"
+      "dc_charger_enabled": {
+        "name": "Active"
       }
     },
     "select": {
       "operational_mode": {
         "name": "Operating Mode"
+      },
+      "dc_charger_mode": {
+        "name": "Mode",
+        "state": {
+          "fast_charging": "Fast Charging",
+          "pv_surplus_charging": "PV Surplus Charging",
+          "bidirectional_v2x": "Bi-directional V2X"
+        }
       }
     }
   }

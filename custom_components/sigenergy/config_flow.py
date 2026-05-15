@@ -8,10 +8,14 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from sigenergy_cloud import (
+    SigenergyCloudAuthError,
+    SigenergyCloudClient,
+    SigenergyCloudError,
+)
 
 from .const import CONF_REGION, DOMAIN, LOGGER, REGIONS
-from .sigen import Sigen
-from .sigen.exceptions import SigenAuthError, SigenError
 
 
 class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -29,9 +33,9 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 station_id = await self._validate_and_get_station_id(user_input)
-            except SigenAuthError:
+            except SigenergyCloudAuthError:
                 errors["base"] = "auth"
-            except SigenError as exc:
+            except SigenergyCloudError as exc:
                 LOGGER.error("Sigenergy connection error: %s", exc)
                 errors["base"] = "connection"
             except Exception as exc:  # noqa: BLE001
@@ -95,9 +99,9 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             new_data = {**reauth_entry.data, **user_input}
             try:
                 await self._validate_and_get_station_id(new_data)
-            except SigenAuthError:
+            except SigenergyCloudAuthError:
                 errors["base"] = "auth"
-            except SigenError as exc:
+            except SigenergyCloudError as exc:
                 LOGGER.error("Sigenergy connection error: %s", exc)
                 errors["base"] = "connection"
             except Exception as exc:  # noqa: BLE001
@@ -128,10 +132,17 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _validate_and_get_station_id(self, data: dict[str, Any]) -> str:
         """Create a client, authenticate, and return the station ID."""
-        client = Sigen(
+        client = SigenergyCloudClient(
             username=data[CONF_USERNAME],
             password=data[CONF_PASSWORD],
             region=data.get(CONF_REGION, "eu"),
+            session=async_get_clientsession(self.hass),
         )
-        await client.async_initialize()
-        return client.station_id
+        try:
+            await client.connect()
+            if client.station_id is None:
+                msg = "Sigenergy Cloud did not return a station ID"
+                raise SigenergyCloudError(msg)
+            return client.station_id
+        finally:
+            await client.close()

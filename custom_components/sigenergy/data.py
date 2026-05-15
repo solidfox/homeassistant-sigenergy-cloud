@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
+    from sigenergy_cloud import SigenergyCloudClient
 
     from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
-    from .sigen import Sigen
 
 type SigenConfigEntry = ConfigEntry[SigenData]
 
@@ -18,6 +18,6 @@ type SigenConfigEntry = ConfigEntry[SigenData]
 class SigenData:
     """Runtime data stored on the config entry."""
 
-    client: Sigen
+    client: SigenergyCloudClient
     settings_coordinator: SigenSettingsCoordinator
     status_coordinator: SigenStatusCoordinator

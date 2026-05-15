@@ -6,12 +6,16 @@ from typing import TYPE_CHECKING
 
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from sigenergy_cloud import (
+    SigenergyCloudAuthError,
+    SigenergyCloudClient,
+    SigenergyCloudError,
+)
 
-from .const import CONF_REGION, DOMAIN, LOGGER
+from .const import CONF_REGION
 from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
 from .data import SigenData
-from .sigen import Sigen
-from .sigen.exceptions import SigenAuthError, SigenError
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -19,6 +23,8 @@ if TYPE_CHECKING:
     from .data import SigenConfigEntry
 
 PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
+    Platform.BINARY_SENSOR,
     Platform.SENSOR,
     Platform.NUMBER,
     Platform.SWITCH,
@@ -31,17 +37,18 @@ async def async_setup_entry(
     entry: SigenConfigEntry,
 ) -> bool:
     """Set up Sigenergy from a config entry."""
-    client = Sigen(
+    client = SigenergyCloudClient(
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         region=entry.data.get(CONF_REGION, "eu"),
+        session=async_get_clientsession(hass),
     )
 
     try:
-        await client.async_initialize()
-    except SigenAuthError as exc:
+        await client.connect()
+    except SigenergyCloudAuthError as exc:
         raise ConfigEntryAuthFailed(exc) from exc
-    except SigenError as exc:
+    except SigenergyCloudError as exc:
         raise ConfigEntryNotReady(exc) from exc
 
     settings_coordinator = SigenSettingsCoordinator(hass, client)
@@ -67,7 +74,10 @@ async def async_unload_entry(
     entry: SigenConfigEntry,
 ) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        await entry.runtime_data.client.close()
+    return unload_ok
 
 
 async def async_reload_entry(
