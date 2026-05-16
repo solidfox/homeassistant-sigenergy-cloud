@@ -1,0 +1,47 @@
+# The contents of this file is based on https://github.com/home-assistant/core/blob/dev/pyproject.toml
+
+target-version = "py314"
+
+[lint]
+select = [
+    "ALL",
+]
+
+ignore = [
+    "ANN", # Type annotations are added where they clarify integration contracts
+    "ARG001", # Home Assistant setup signatures include framework arguments
+    "ARG002", # Home Assistant entity methods include framework kwargs
+    "C901", # Coordinator polling methods are intentionally grouped by endpoint
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D203", # no-blank-line-before-class (incompatible with formatter)
+    "D205", # Missing blank line after summary
+    "D212", # multi-line-summary-first-line (incompatible with formatter)
+    "D107", # Missing docstring in __init__
+    "DTZ011", # date.today() is sufficient for API date ranges
+    "E501", # Let formatter manage practical line length
+    "EM102", # Home Assistant errors often use inline messages
+    "FBT001", # Boolean arguments are acceptable in internal helpers
+    "FBT003", # Boolean calls are acceptable for Home Assistant service-style APIs
+    "PERF401", # Explicit entity list assembly is easier to scan
+    "PLR0912", # Integration coordinators naturally branch by endpoint state
+    "PLR0913", # Entity constructors mirror Home Assistant setup data
+    "PLR0915", # Coordinator polling methods are intentionally grouped
+    "PLR2004", # Protocol/status constants are close to their use
+    "RUF001", # Existing user-facing strings may contain punctuation
+    "RUF012", # Entity description class attributes are intentionally shared
+    "TRY003", # Home Assistant errors often use direct messages
+    "TRY300", # Existing try/except shape keeps auth/update failures local
+    "COM812", # incompatible with formatter
+    "ISC001", # incompatible with formatter
+]
+
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[lint.pyupgrade]
+keep-runtime-typing = true
+
+[lint.mccabe]
+max-complexity = 25
