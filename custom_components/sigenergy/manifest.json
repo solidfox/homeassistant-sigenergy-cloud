@@ -4,8 +4,8 @@
   "codeowners": ["@solidfox"],
   "config_flow": true,
   "documentation": "https://github.com/solidfox/homeassistant-sigenergy-cloud",
-  "issue_tracker": "https://github.com/solidfox/homeassistant-sigenergy-cloud/issues",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/solidfox/homeassistant-sigenergy-cloud/issues",
   "requirements": ["sigenergy-cloud==0.1.0"],
   "version": "0.1.0"
 }
