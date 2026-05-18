@@ -41,6 +41,38 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
+def _directed_charge_power(value: Any) -> float | None:
+    """Normalize EVDC charge realtime power to positive charging power."""
+    power = _float_or_none(value)
+    if power is None:
+        return None
+    return abs(power)
+
+
+def _v2x_discharge_power(
+    *,
+    info_power: float | None,
+    realtime_power: float | None,
+    discharge_current: float | None,
+    secc_run_state: float | None,
+) -> float | None:
+    """Return positive V2X discharge magnitude, or None when not discharging."""
+    if info_power is not None and info_power < -0.05:
+        return abs(info_power)
+    if secc_run_state == 8:
+        for value in (realtime_power, info_power):
+            if value is not None and abs(value) > 0.05:
+                return abs(value)
+        if discharge_current is not None and discharge_current > 0.1:
+            return 0.0
+    if discharge_current is not None and discharge_current > 0.1:
+        for value in (realtime_power, info_power):
+            if value is not None and abs(value) > 0.05:
+                return abs(value)
+        return 0.0
+    return None
+
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from sigenergy_cloud import SigenergyCloudClient
@@ -325,8 +357,10 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     charge_realtime = (
                         await self.client.dc_charge_realtime(dc_sn=dc_sn) or {}
                     )
-                    dc_data["dc_charge_power"] = charge_realtime.get(
-                        "pileOutputPower", last_dc.get("dc_charge_power")
+                    dc_data["dc_charge_power"] = (
+                        _directed_charge_power(charge_realtime.get("pileOutputPower"))
+                        if "pileOutputPower" in charge_realtime
+                        else last_dc.get("dc_charge_power")
                     )
                     dc_data["ev_soc"] = charge_realtime.get(
                         "vehicleSoc", last_dc.get("ev_soc")
@@ -427,18 +461,16 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     discharge_current = _float_or_none(
                         realtime.get("dischargingOutputCurrent") if realtime else None
                     )
-                    discharging = (
-                        secc == 8
-                        or (discharge_power is not None and discharge_power > 0.05)
-                        or (realtime_power is not None and realtime_power > 0.05)
-                        or (discharge_current is not None and discharge_current > 0.1)
+                    discharge_magnitude = _v2x_discharge_power(
+                        info_power=discharge_power,
+                        realtime_power=realtime_power,
+                        discharge_current=discharge_current,
+                        secc_run_state=secc,
                     )
+                    discharging = discharge_magnitude is not None
 
-                    if discharging:
-                        for value in (discharge_power, realtime_power):
-                            if value is not None and value > 0:
-                                dc_data["dc_charge_power"] = -abs(value)
-                                break
+                    if discharge_magnitude is not None:
+                        dc_data["dc_charge_power"] = -abs(discharge_magnitude)
 
                     if manual_session and discharging:
                         dc_data["v2x_status"] = "manual"
