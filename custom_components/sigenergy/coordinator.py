@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -14,6 +14,7 @@ from .const import DOMAIN, LOGGER
 
 _STATUS_NORMAL_INTERVAL = timedelta(seconds=30)
 _STATUS_FAST_INTERVAL = timedelta(seconds=5)
+_PREDICTION_DATA_INTERVAL = timedelta(hours=1)
 
 _DCEVSE_STATUS_LABELS = {
     1: "Ready",
@@ -96,6 +97,8 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.v2x_duration_minutes: int = 600
         self.v2x_power_cap_kw_by_sn: dict[str, float | None] = {}
         self.v2x_duration_minutes_by_sn: dict[str, int] = {}
+        self._prediction_data_cache: dict[str, Any] | None = None
+        self._prediction_data_updated_at: datetime | None = None
 
     def dc_sns(self) -> list[str]:
         """Return known DC charger serial numbers."""
@@ -119,6 +122,26 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def set_v2x_duration_minutes(self, dc_sn: str, value: int) -> None:
         """Set the pending V2X duration for a DC charger."""
         self.v2x_duration_minutes_by_sn[dc_sn] = value
+
+    async def _prediction_data(self, safe) -> dict[str, Any] | None:
+        """Return cached AI prediction data, refreshing it at a slower cadence."""
+        now = datetime.now(UTC)
+        if (
+            self._prediction_data_cache is not None
+            and self._prediction_data_updated_at is not None
+            and now - self._prediction_data_updated_at < _PREDICTION_DATA_INTERVAL
+        ):
+            return self._prediction_data_cache
+
+        data = await safe(
+            self.client.prediction_data(),
+            "prediction_data",
+            self._prediction_data_cache,
+        )
+        if isinstance(data, dict):
+            self._prediction_data_cache = data
+            self._prediction_data_updated_at = now
+        return self._prediction_data_cache
 
     async def _async_update_data(self) -> dict[str, Any]:
         # Each section is fetched independently; one transient failure
@@ -166,8 +189,14 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "battery_export": await safe(
                     self.client.battery_export_limitation(), "battery_export"
                 ),
-                "prediction_data": await safe(
-                    self.client.prediction_data(), "prediction_data"
+                "prediction_data": await self._prediction_data(safe),
+                "prediction_data_fetched_at": (
+                    self._prediction_data_updated_at.isoformat()
+                    if self._prediction_data_updated_at is not None
+                    else None
+                ),
+                "prediction_data_refresh_interval_minutes": int(
+                    _PREDICTION_DATA_INTERVAL.total_seconds() // 60
                 ),
                 "peak_shaving": await safe(
                     self.client.peak_shaving_schedule(), "peak_shaving"

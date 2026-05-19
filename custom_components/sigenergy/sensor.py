@@ -605,7 +605,8 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        payload = _prediction_payload(self.coordinator.data)
+        coordinator_data = self.coordinator.data
+        payload = _prediction_payload(coordinator_data)
         points = _prediction_points(payload, self.entity_description.payload_key)
         timestamps = [timestamp.isoformat() for timestamp, _ in points]
         values = [round(value, 4) for _, value in points]
@@ -616,6 +617,10 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
                 "prediction/predictData/get/predictData/{stationId}"
             ),
             "updated_at": payload.get("nowTime"),
+            "fetched_at": (coordinator_data or {}).get("prediction_data_fetched_at"),
+            "refresh_interval_minutes": (coordinator_data or {}).get(
+                "prediction_data_refresh_interval_minutes"
+            ),
             "interval_minutes": round(_prediction_interval_hours(points) * 60),
             "points": len(points),
             "timestamps": timestamps,
