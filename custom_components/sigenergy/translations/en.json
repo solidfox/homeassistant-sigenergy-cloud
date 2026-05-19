@@ -71,6 +71,15 @@
       "battery_soc": {
         "name": "Battery SOC"
       },
+      "solar_power_forecast": {
+        "name": "Solar Power Forecast"
+      },
+      "load_power_forecast": {
+        "name": "Load Power Forecast"
+      },
+      "battery_soc_forecast": {
+        "name": "Battery SOC Forecast"
+      },
       "dc_charge_power": {
         "name": "Charge Power"
       },

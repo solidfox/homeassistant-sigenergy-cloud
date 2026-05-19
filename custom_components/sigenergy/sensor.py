@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -13,10 +14,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
+from homeassistant.util import dt as dt_util
 
 from .entity import (
     SigenDCChargerSettingsEntity,
     SigenDCChargerStatusEntity,
+    SigenSettingsEntity,
     SigenStatusEntity,
 )
 
@@ -40,6 +43,15 @@ class SigenLastSessionFieldDescription(SensorEntityDescription):
     """Description for one normalized field from the last session record."""
 
     value_key: str
+    attribute_description: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class SigenForecastCurveDescription(SensorEntityDescription):
+    """Description for one prediction curve from Sigenergy AI."""
+
+    payload_key: str
+    values_key: str
     attribute_description: str
 
 
@@ -96,6 +108,54 @@ ENERGY_FLOW_SENSORS: tuple[SigenSensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
+    ),
+)
+
+FORECAST_CURVE_SENSORS: tuple[SigenForecastCurveDescription, ...] = (
+    SigenForecastCurveDescription(
+        key="solar_power_forecast",
+        payload_key="pvList",
+        values_key="power_kw",
+        translation_key="solar_power_forecast",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        icon="mdi:solar-power-variant",
+        attribute_description=(
+            "Sigenergy AI 15-minute solar production forecast for the station. "
+            "The state is the next forecast point in kW; attributes expose the "
+            "curve and energy totals for EMS planning."
+        ),
+    ),
+    SigenForecastCurveDescription(
+        key="load_power_forecast",
+        payload_key="loadList",
+        values_key="power_kw",
+        translation_key="load_power_forecast",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        icon="mdi:home-lightning-bolt-outline",
+        attribute_description=(
+            "Sigenergy AI 15-minute home load forecast for the station. The "
+            "state is the next forecast point in kW; attributes expose the full "
+            "curve for EMS planning."
+        ),
+    ),
+    SigenForecastCurveDescription(
+        key="battery_soc_forecast",
+        payload_key="socList",
+        values_key="soc_percent",
+        translation_key="battery_soc_forecast",
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=PERCENTAGE,
+        icon="mdi:battery-clock-outline",
+        attribute_description=(
+            "Sigenergy AI battery SOC forecast for the station. The state is "
+            "the next forecast point in percent; attributes expose the full SOC "
+            "curve for plan inspection."
+        ),
     ),
 )
 
@@ -322,6 +382,14 @@ async def async_setup_entry(
         )
         for description in ENERGY_FLOW_SENSORS
     ]
+    entities.extend(
+        SigenForecastCurveSensor(
+            data.settings_coordinator,
+            data.client.station_id,
+            description,
+        )
+        for description in FORECAST_CURVE_SENSORS
+    )
     for dc_sn in data.status_coordinator.dc_sns():
         entities.extend(
             SigenDCChargerNumericSensor(
@@ -435,6 +503,136 @@ class SigenEnergyFlowSensor(SigenStatusEntity, SensorEntity):
             return None
         val = self.coordinator.data.get(self.entity_description.data_key)
         return float(val) if val is not None else None
+
+
+def _prediction_payload(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the prediction payload from the settings coordinator."""
+    payload = (data or {}).get("prediction_data") or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _parse_prediction_time(value: Any) -> datetime | None:
+    """Parse Sigenergy prediction timestamps as Home Assistant local time."""
+    if value in (None, ""):
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace(" ", "T"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return parsed.astimezone(dt_util.DEFAULT_TIME_ZONE)
+
+
+def _prediction_points(
+    payload: dict[str, Any], payload_key: str
+) -> list[tuple[datetime, float]]:
+    """Return sorted timestamp/value pairs from a prediction curve."""
+    raw_points = payload.get(payload_key)
+    if not isinstance(raw_points, list):
+        return []
+    points: list[tuple[datetime, float]] = []
+    for raw_point in raw_points:
+        if not isinstance(raw_point, dict):
+            continue
+        timestamp = _parse_prediction_time(raw_point.get("time"))
+        value = _float_value(raw_point.get("value"))
+        if timestamp is None or value is None:
+            continue
+        points.append((timestamp, value))
+    return sorted(points, key=lambda item: item[0])
+
+
+def _next_prediction_value(points: list[tuple[datetime, float]]) -> float | None:
+    """Return the first prediction value at or after now."""
+    now = dt_util.now()
+    for timestamp, value in points:
+        if timestamp >= now:
+            return round(value, 3)
+    if points:
+        return round(points[-1][1], 3)
+    return None
+
+
+def _prediction_interval_hours(points: list[tuple[datetime, float]]) -> float:
+    """Infer the forecast interval; HAR captures show 15-minute points."""
+    for previous, current in zip(points, points[1:], strict=False):
+        delta = current[0] - previous[0]
+        if delta > timedelta(0):
+            return delta.total_seconds() / 3600
+    return 0.25
+
+
+def _prediction_energy_kwh(
+    points: list[tuple[datetime, float]], *, day_offset: int, future_only: bool = False
+) -> float | None:
+    """Integrate a power prediction curve for a local calendar day."""
+    if not points:
+        return None
+    now = dt_util.now()
+    target_day = (now + timedelta(days=day_offset)).date()
+    interval_hours = _prediction_interval_hours(points)
+    total = 0.0
+    for timestamp, value in points:
+        if timestamp.date() != target_day:
+            continue
+        if future_only and timestamp < now:
+            continue
+        total += value * interval_hours
+    return round(total, 2)
+
+
+class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
+    """Prediction curve from the Sigenergy AI forecast endpoint."""
+
+    entity_description: SigenForecastCurveDescription
+
+    def __init__(
+        self,
+        coordinator: SigenSettingsCoordinator,
+        station_id: str,
+        description: SigenForecastCurveDescription,
+    ) -> None:
+        super().__init__(coordinator, station_id, description.key)
+        self.entity_description = description
+
+    @property
+    def native_value(self) -> float | None:
+        payload = _prediction_payload(self.coordinator.data)
+        return _next_prediction_value(
+            _prediction_points(payload, self.entity_description.payload_key)
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        payload = _prediction_payload(self.coordinator.data)
+        points = _prediction_points(payload, self.entity_description.payload_key)
+        timestamps = [timestamp.isoformat() for timestamp, _ in points]
+        values = [round(value, 4) for _, value in points]
+        attrs: dict[str, Any] = {
+            "description": self.entity_description.attribute_description,
+            "source": "sigen_ai",
+            "source_endpoint": (
+                "prediction/predictData/get/predictData/{stationId}"
+            ),
+            "updated_at": payload.get("nowTime"),
+            "interval_minutes": round(_prediction_interval_hours(points) * 60),
+            "points": len(points),
+            "timestamps": timestamps,
+            self.entity_description.values_key: values,
+            "timestamps_json": json.dumps(timestamps, separators=(",", ":")),
+            f"{self.entity_description.values_key}_json": json.dumps(
+                values, separators=(",", ":")
+            ),
+        }
+        if self.entity_description.native_unit_of_measurement == UnitOfPower.KILO_WATT:
+            attrs["energy_remaining_today_kwh"] = _prediction_energy_kwh(
+                points, day_offset=0, future_only=True
+            )
+            attrs["energy_tomorrow_kwh"] = _prediction_energy_kwh(
+                points, day_offset=1
+            )
+        return attrs
 
 
 class SigenDCChargerNumericSensor(SigenDCChargerStatusEntity, SensorEntity):

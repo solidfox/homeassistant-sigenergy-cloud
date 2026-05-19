@@ -166,6 +166,9 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "battery_export": await safe(
                     self.client.battery_export_limitation(), "battery_export"
                 ),
+                "prediction_data": await safe(
+                    self.client.prediction_data(), "prediction_data"
+                ),
                 "peak_shaving": await safe(
                     self.client.peak_shaving_schedule(), "peak_shaving"
                 ),
