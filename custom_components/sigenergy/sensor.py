@@ -277,7 +277,6 @@ DC_CHARGER_LAST_SESSION_FIELD_SENSORS: tuple[SigenLastSessionFieldDescription, .
         value_key="energy_in_kwh",
         translation_key="dc_charger_last_session_energy_charged",
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         icon="mdi:battery-plus",
         attribute_description=(
@@ -291,7 +290,6 @@ DC_CHARGER_LAST_SESSION_FIELD_SENSORS: tuple[SigenLastSessionFieldDescription, .
         value_key="energy_out_kwh",
         translation_key="dc_charger_last_session_energy_discharged",
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         icon="mdi:battery-minus",
         attribute_description=(
