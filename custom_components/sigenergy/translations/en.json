@@ -146,6 +146,12 @@
       "dc_charger_last_session_duration": {
         "name": "Last Session Duration"
       },
+      "dc_charger_last_session_start_source": {
+        "name": "Last Session Start Source"
+      },
+      "dc_charger_last_session_start_method": {
+        "name": "Last Session Start Method"
+      },
       "dc_charger_last_session_energy_charged": {
         "name": "Last Session Energy Charged"
       },

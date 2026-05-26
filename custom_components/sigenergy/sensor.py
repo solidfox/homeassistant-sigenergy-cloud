@@ -273,6 +273,26 @@ DC_CHARGER_LAST_SESSION_FIELD_SENSORS: tuple[SigenLastSessionFieldDescription, .
         ),
     ),
     SigenLastSessionFieldDescription(
+        key="last_session_start_source",
+        value_key="start_text",
+        translation_key="dc_charger_last_session_start_source",
+        icon="mdi:play-circle-outline",
+        attribute_description=(
+            "Human-readable Sigenergy start source for the last completed EVDC "
+            "session. HAR captures show values such as App and Auto Charge."
+        ),
+    ),
+    SigenLastSessionFieldDescription(
+        key="last_session_start_method",
+        value_key="start_method",
+        translation_key="dc_charger_last_session_start_method",
+        icon="mdi:numeric",
+        attribute_description=(
+            "Raw Sigenergy chargingStartMethod code for the last completed EVDC "
+            "session. HAR captures show 0 for Auto Charge and 1 for App."
+        ),
+    ),
+    SigenLastSessionFieldDescription(
         key="last_session_energy_charged",
         value_key="energy_in_kwh",
         translation_key="dc_charger_last_session_energy_charged",
@@ -979,6 +999,7 @@ def _last_session_values(record: dict[str, Any]) -> dict[str, Any]:
         "start_soc": start_soc,
         "end_soc": end_soc,
         "soc_change": _rounded(soc_change),
+        "start_method": _first_value(record, "chargingStartMethod", "startMethod"),
         "end_code": _first_value(record, "chargingEndCode", "endCode", "stopCode"),
         "alarm_code": _first_value(record, "alarmCode", "faultCode", "errorCode"),
         "alarm_name": _first_value(record, "alarmName", "faultName", "errorName"),
