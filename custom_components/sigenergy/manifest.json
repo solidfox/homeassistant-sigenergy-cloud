@@ -7,5 +7,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/solidfox/homeassistant-sigenergy-cloud/issues",
   "requirements": ["sigenergy-cloud==0.1.1"],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

@@ -502,6 +502,25 @@ class SigenEnergyFlowSensor(SigenStatusEntity, SensorEntity):
         val = self.coordinator.data.get(self.entity_description.data_key)
         return float(val) if val is not None else None
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if (
+            self.entity_description.key != "pv_power"
+            or self.coordinator.data is None
+        ):
+            return None
+        return {
+            "description": (
+                "Total Sigenergy cloud PV production power. The app API reports "
+                "native Sigenergy PV as pvPower and third-party inverter PV as "
+                "thirdPvPower; this entity intentionally sums both."
+            ),
+            "native_pv_power_kw": self.coordinator.data.get("native_pv_power"),
+            "third_party_pv_power_kw": self.coordinator.data.get(
+                "third_party_pv_power"
+            ),
+        }
+
 
 def _prediction_payload(data: dict[str, Any] | None) -> dict[str, Any]:
     """Return the prediction payload from the settings coordinator."""

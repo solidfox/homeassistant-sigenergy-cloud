@@ -42,6 +42,15 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
+def _energy_flow_pv_power(flow: dict[str, Any], last: dict[str, Any]) -> float | None:
+    """Return total station PV power, including Sigenergy's third-party PV field."""
+    native_pv_power = _float_or_none(flow.get("pvPower"))
+    third_party_pv_power = _float_or_none(flow.get("thirdPvPower"))
+    if native_pv_power is None and third_party_pv_power is None:
+        return last.get("pv_power")
+    return (native_pv_power or 0.0) + (third_party_pv_power or 0.0)
+
+
 def _directed_charge_power(value: Any) -> float | None:
     """Normalize EVDC charge realtime power to positive charging power."""
     power = _float_or_none(value)
@@ -334,7 +343,17 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 flow = {}
             data: dict[str, Any] = {
                 "ev_power": flow.get("evPower", last.get("ev_power")),
-                "pv_power": flow.get("pvPower", last.get("pv_power")),
+                "pv_power": _energy_flow_pv_power(flow, last),
+                "native_pv_power": (
+                    _float_or_none(flow.get("pvPower"))
+                    if "pvPower" in flow
+                    else last.get("native_pv_power")
+                ),
+                "third_party_pv_power": (
+                    _float_or_none(flow.get("thirdPvPower"))
+                    if "thirdPvPower" in flow
+                    else last.get("third_party_pv_power")
+                ),
                 "grid_power": flow.get("buySellPower", last.get("grid_power")),
                 "load_power": flow.get("loadPower", last.get("load_power")),
                 "battery_power": flow.get("batteryPower", last.get("battery_power")),
