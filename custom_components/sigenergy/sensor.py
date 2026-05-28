@@ -159,6 +159,20 @@ FORECAST_CURVE_SENSORS: tuple[SigenForecastCurveDescription, ...] = (
     ),
 )
 
+_INSTANT_MANUAL_MODE_STATES = {
+    "0": "charging",
+    "1": "discharging",
+    "2": "hold_battery",
+    "3": "self_consumption",
+}
+_INSTANT_MANUAL_STATE_LABELS = {
+    "off": "Off",
+    "charging": "Charging",
+    "discharging": "Discharging",
+    "hold_battery": "Hold Battery",
+    "self_consumption": "Self-Consumption",
+}
+
 
 DC_CHARGER_SENSORS: tuple[SigenSensorDescription, ...] = (
     SigenSensorDescription(
@@ -408,6 +422,12 @@ async def async_setup_entry(
         )
         for description in FORECAST_CURVE_SENSORS
     )
+    entities.append(
+        SigenInstantManualControlSensor(
+            data.settings_coordinator,
+            data.client.station_id,
+        )
+    )
     for dc_sn in data.status_coordinator.dc_sns():
         entities.extend(
             SigenDCChargerNumericSensor(
@@ -561,6 +581,15 @@ def _parse_prediction_time(value: Any) -> datetime | None:
     return parsed.astimezone(dt_util.DEFAULT_TIME_ZONE)
 
 
+def _instant_manual_state(control: Any) -> str:
+    """Return a stable HA enum state for Instant Manual Control."""
+    if not control or not getattr(control, "enabled", False):
+        return "off"
+    mode = getattr(control, "mode", None)
+    value = getattr(mode, "value", mode)
+    return _INSTANT_MANUAL_MODE_STATES.get(str(value), f"mode_{value}")
+
+
 def _prediction_points(
     payload: dict[str, Any], payload_key: str
 ) -> list[tuple[datetime, float]]:
@@ -675,6 +704,58 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
                 points, day_offset=1
             )
         return attrs
+
+
+class SigenInstantManualControlSensor(SigenSettingsEntity, SensorEntity):
+    """Station Instant Manual Control state from the cloud app API."""
+
+    _attr_translation_key = "instant_manual_control"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = list(_INSTANT_MANUAL_STATE_LABELS)
+    _attr_icon = "mdi:hand-back-right-outline"
+
+    def __init__(
+        self,
+        coordinator: SigenSettingsCoordinator,
+        station_id: str,
+    ) -> None:
+        super().__init__(coordinator, station_id, "instant_manual_control")
+
+    @property
+    def native_value(self) -> str:
+        return _instant_manual_state((self.coordinator.data or {}).get("instant_manual"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        control = data.get("instant_manual")
+        display = data.get("instant_manual_display") or {}
+        state = _instant_manual_state(control)
+        end_time = getattr(control, "end_time", None) if control else None
+        return {
+            "description": (
+                "Sigenergy Instant Manual Control state. Use this for short "
+                "Charging, Discharging, Hold Battery, or Self-Consumption "
+                "overrides without switching the station away from Sigen AI mode."
+            ),
+            "label": _INSTANT_MANUAL_STATE_LABELS.get(state, state),
+            "api_mode": (
+                getattr(getattr(control, "mode", None), "value", None)
+                if control
+                else None
+            ),
+            "end_time": (
+                datetime.fromtimestamp(end_time, tz=UTC).isoformat()
+                if end_time
+                else None
+            ),
+            "battery_power_kw": _float_value(display.get("batteryPower")),
+            "battery_soc_percent": _float_value(display.get("batterySoc")),
+            "source_endpoint": "device/energy-profile/instant/manunal/{stationId}",
+            "display_endpoint": (
+                "device/energy-profile/instant/manunal/display/{stationId}"
+            ),
+        }
 
 
 class SigenDCChargerNumericSensor(SigenDCChargerStatusEntity, SensorEntity):
@@ -893,7 +974,7 @@ def _float_value(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 

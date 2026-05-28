@@ -80,6 +80,16 @@
       "battery_soc_forecast": {
         "name": "Battery SOC Forecast"
       },
+      "instant_manual_control": {
+        "name": "Instant Manual Control",
+        "state": {
+          "off": "Off",
+          "charging": "Charging",
+          "discharging": "Discharging",
+          "hold_battery": "Hold Battery",
+          "self_consumption": "Self-Consumption"
+        }
+      },
       "dc_charge_power": {
         "name": "Charge Power"
       },

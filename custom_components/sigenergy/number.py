@@ -184,7 +184,12 @@ class SigenPowerLimitNumber(SigenSettingsEntity, NumberEntity):
             await self.coordinator.client.set_grid_export_limit(value, enabled=enabled)
         else:
             await self.coordinator.client.set_grid_import_limit(value, enabled=enabled)
-        await self.coordinator.async_request_refresh()
+        new_limit = dict(current)
+        new_limit["enable"] = enabled
+        new_limit["maxLimitationOwner"] = f"{value:.3f}"
+        self.coordinator.async_update_local_data(
+            {self.entity_description.data_key: new_limit}
+        )
 
 
 # ── Battery SOC numbers ───────────────────────────────────────────────────────
@@ -236,7 +241,7 @@ class SigenBatterySOCNumber(SigenSettingsEntity, NumberEntity):
             backup_soc=int(value) if field == "backup_soc" else current.backup_soc,
         )
         await self.coordinator.client.set_battery_levels(new_settings)
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_update_local_data({"battery_level": new_settings})
 
 
 # ── Peak shaving slot numbers ─────────────────────────────────────────────────
@@ -317,8 +322,9 @@ class SigenPeakShavingSlotNumber(SigenSettingsEntity, NumberEntity):
             end_time=current_slot.end_time,
             peak_power_kw=value,
         )
-        await self.coordinator.client.set_peak_shaving_slot(new_slot)
-        await self.coordinator.async_request_refresh()
+        new_schedule = schedule.with_slot(new_slot)
+        await self.coordinator.client.set_peak_shaving_schedule(new_schedule)
+        self.coordinator.async_update_local_data({"peak_shaving": new_schedule})
 
 
 # ── DC charger settings ───────────────────────────────────────────────────────
@@ -369,7 +375,12 @@ class _SigenDCChargerSettingNumber(SigenDCChargerSettingsEntity, NumberEntity):
             vehicle_charging_cutoff_soc=soc,
             dc_sn=self._dc_sn,
         )
-        await self.coordinator.async_request_refresh()
+        new_setting = dict(current)
+        new_setting["allowedChargePower"] = power
+        new_setting["vehicleChargingCutoffSoc"] = soc
+        self.coordinator.async_update_local_dc_data(
+            self._dc_sn, {"charge_setting": new_setting}
+        )
 
 
 class SigenDCChargerPowerNumber(_SigenDCChargerSettingNumber):
@@ -491,7 +502,16 @@ class _SigenDCChargerModeNumber(SigenDCChargerSettingsEntity, NumberEntity):
                 charge_mode,
                 dc_sn=self._dc_sn,
             )
-        await self.coordinator.async_request_refresh()
+        new_mode = dict(current)
+        new_mode["chargeMode"] = charge_mode
+        new_mode[self._mode_field] = (
+            int(value)
+            if self._mode_field == "vehicleDischargeCutoffSoc"
+            else float(value)
+        )
+        self.coordinator.async_update_local_dc_data(
+            self._dc_sn, {"charge_mode": new_mode}
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         await self._write_charge_mode(value)

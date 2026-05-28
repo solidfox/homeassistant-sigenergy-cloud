@@ -87,13 +87,17 @@ class SigenExportLimitSwitch(SigenSettingsEntity, SwitchEntity):
         current = self.coordinator.data.get("export_limit", {})
         limit_kw = float(current.get("maxLimitationOwner") or 0)
         await self.coordinator.client.set_grid_export_limit(limit_kw, enabled=True)
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_update_local_data(
+            {"export_limit": {**current, "enable": True}}
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         current = self.coordinator.data.get("export_limit", {})
         limit_kw = float(current.get("maxLimitationOwner") or 0)
         await self.coordinator.client.set_grid_export_limit(limit_kw, enabled=False)
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_update_local_data(
+            {"export_limit": {**current, "enable": False}}
+        )
 
 
 class SigenImportLimitSwitch(SigenSettingsEntity, SwitchEntity):
@@ -116,13 +120,17 @@ class SigenImportLimitSwitch(SigenSettingsEntity, SwitchEntity):
         current = self.coordinator.data.get("import_limit", {})
         limit_kw = float(current.get("maxLimitationOwner") or 0)
         await self.coordinator.client.set_grid_import_limit(limit_kw, enabled=True)
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_update_local_data(
+            {"import_limit": {**current, "enable": True}}
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         current = self.coordinator.data.get("import_limit", {})
         limit_kw = float(current.get("maxLimitationOwner") or 0)
         await self.coordinator.client.set_grid_import_limit(limit_kw, enabled=False)
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_update_local_data(
+            {"import_limit": {**current, "enable": False}}
+        )
 
 
 class SigenBatteryExportSwitch(SigenSettingsEntity, SwitchEntity):
@@ -143,11 +151,17 @@ class SigenBatteryExportSwitch(SigenSettingsEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.client.set_battery_export_limitation(True)
-        await self.coordinator.async_request_refresh()
+        current = self.coordinator.data.get("battery_export", {})
+        self.coordinator.async_update_local_data(
+            {"battery_export": {**current, "ownerSetEnable": True}}
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.client.set_battery_export_limitation(False)
-        await self.coordinator.async_request_refresh()
+        current = self.coordinator.data.get("battery_export", {})
+        self.coordinator.async_update_local_data(
+            {"battery_export": {**current, "ownerSetEnable": False}}
+        )
 
 
 # ── DC charger setting switches ───────────────────────────────────────────────
@@ -206,7 +220,11 @@ class SigenDCChargerBatteryBoostSwitch(SigenDCChargerSettingsEntity, SwitchEntit
             dc_sn=self._dc_sn,
             **kwargs,
         )
-        await self.coordinator.async_request_refresh()
+        new_mode = dict(current)
+        new_mode["enableFromPack"] = enabled
+        self.coordinator.async_update_local_dc_data(
+            self._dc_sn, {"charge_mode": new_mode}
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._set_enabled(True)
@@ -215,7 +233,7 @@ class SigenDCChargerBatteryBoostSwitch(SigenDCChargerSettingsEntity, SwitchEntit
         await self._set_enabled(False)
 
 
-# ── Status-backed switches (polled every 30 s) ────────────────────────────────
+# ── Status-backed switches ────────────────────────────────────────────────────
 
 _DC_CHARGER_PENDING_TIMEOUT = 5 * 60
 

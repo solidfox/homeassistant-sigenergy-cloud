@@ -21,7 +21,7 @@ from .const import CONF_REGION, DOMAIN, LOGGER, REGIONS
 class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Sigenergy."""
 
-    VERSION = 2
+    VERSION = 3
 
     async def async_step_user(
         self,
@@ -143,6 +143,6 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if client.station_id is None:
                 msg = "Sigenergy Cloud did not return a station ID"
                 raise SigenergyCloudError(msg)
-            return client.station_id
+            return str(client.station_id)
         finally:
             await client.close()

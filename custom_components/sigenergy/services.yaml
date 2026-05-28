@@ -1,0 +1,55 @@
+set_instant_manual_control:
+  name: Set Instant Manual Control
+  description: Temporarily override the station with Sigenergy Instant Manual Control without switching away from the active operating mode.
+  fields:
+    mode:
+      required: true
+      selector:
+        select:
+          options:
+            - charging
+            - discharging
+            - hold_battery
+            - self_consumption
+      name: Mode
+      description: Instant Manual Control mode shown by the Sigenergy app.
+    duration_minutes:
+      required: false
+      default: 30
+      selector:
+        number:
+          min: 30
+          max: 120
+          step: 30
+          mode: box
+          unit_of_measurement: min
+      name: Duration
+      description: How long the instant override should remain active.
+    power_limitation_kw:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.5
+          mode: box
+          unit_of_measurement: kW
+      name: Power Limit
+      description: Optional power cap. Leave unset to use the app's unlimited-power behavior for Charging and Discharging.
+    entry_id:
+      required: false
+      selector:
+        text:
+      name: Config Entry ID
+      description: Optional target config entry when multiple Sigenergy stations are configured.
+
+disable_instant_manual_control:
+  name: Disable Instant Manual Control
+  description: Disable Sigenergy Instant Manual Control and hand control back to the active strategy.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+      name: Config Entry ID
+      description: Optional target config entry when multiple Sigenergy stations are configured.

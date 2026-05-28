@@ -77,7 +77,7 @@ class SigenOperationalModeSelect(SigenSettingsEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         mode_int, profile_id = self.coordinator.available_modes[option]
         await self.coordinator.client.set_operational_mode(mode_int, profile_id)
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_update_local_data({"operational_mode": option})
 
 
 class SigenDCChargerModeSelect(SigenDCChargerSettingsEntity, SelectEntity):
@@ -126,4 +126,8 @@ class SigenDCChargerModeSelect(SigenDCChargerSettingsEntity, SelectEntity):
         await self.coordinator.client.set_dc_charge_mode(
             mode_int, dc_sn=self._dc_sn, **kwargs
         )
-        await self.coordinator.async_request_refresh()
+        new_mode = dict(current)
+        new_mode["chargeMode"] = mode_int
+        self.coordinator.async_update_local_dc_data(
+            self._dc_sn, {"charge_mode": new_mode}
+        )
