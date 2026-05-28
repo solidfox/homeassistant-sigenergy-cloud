@@ -226,7 +226,7 @@
         "name": "Grid Import Limit"
       },
       "battery_export_enabled": {
-        "name": "Battery Export to Grid"
+        "name": "Block Battery Export to Grid"
       },
       "dc_charger_battery_boost": {
         "name": "Battery Boost"
