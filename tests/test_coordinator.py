@@ -76,6 +76,7 @@ sys.modules["custom_components.sigenergy.coordinator"] = coordinator
 spec.loader.exec_module(coordinator)
 
 _status_dc_data_from_last = coordinator._status_dc_data_from_last
+_signed_dc_charge_power = coordinator._signed_dc_charge_power
 
 
 class StatusDcDataFromLastTest(unittest.TestCase):
@@ -123,6 +124,19 @@ class StatusDcDataFromLastTest(unittest.TestCase):
         )
 
         self.assertIs(dc_data["is_charging"], False)
+
+
+class SignedDcChargePowerTest(unittest.TestCase):
+    """Tests for EVDC signed power convention."""
+
+    def test_positive_power_is_negative_when_secc_is_discharging(self) -> None:
+        self.assertEqual(_signed_dc_charge_power(3.2, secc_run_state=8), -3.2)
+
+    def test_positive_power_stays_positive_when_secc_is_charging(self) -> None:
+        self.assertEqual(_signed_dc_charge_power(3.2, secc_run_state=3), 3.2)
+
+    def test_negative_power_remains_negative_without_secc_hint(self) -> None:
+        self.assertEqual(_signed_dc_charge_power(-3.2, secc_run_state=None), -3.2)
 
 
 if __name__ == "__main__":

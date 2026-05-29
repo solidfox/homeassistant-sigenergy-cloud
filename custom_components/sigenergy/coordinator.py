@@ -129,12 +129,15 @@ def _energy_flow_pv_power(flow: dict[str, Any], last: dict[str, Any]) -> float |
     return (native_pv_power or 0.0) + (third_party_pv_power or 0.0)
 
 
-def _directed_charge_power(value: Any) -> float | None:
-    """Normalize EVDC charge realtime power to positive charging power."""
+def _signed_dc_charge_power(value: Any, *, secc_run_state: int | None) -> float | None:
+    """Normalize EVDC realtime power to signed car charge/discharge power."""
     power = _float_or_none(value)
     if power is None:
         return None
-    return abs(power)
+    magnitude = abs(power)
+    if power < -0.05 or secc_run_state == 8:
+        return -magnitude
+    return magnitude
 
 
 def _v2x_discharge_power(
@@ -622,13 +625,6 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             await self.client.dc_charge_realtime(dc_sn=dc_sn) or {}
                         )
                         self._mark_refreshed(self._dc_realtime_updated_at, dc_sn)
-                        dc_data["dc_charge_power"] = (
-                            _directed_charge_power(
-                                charge_realtime.get("pileOutputPower")
-                            )
-                            if "pileOutputPower" in charge_realtime
-                            else last_dc.get("dc_charge_power")
-                        )
                         dc_data["ev_soc"] = charge_realtime.get(
                             "vehicleSoc", last_dc.get("ev_soc")
                         )
@@ -638,6 +634,24 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             dc_data["dc_charger_status"] = _SECC_RUN_STATE_LABELS.get(
                                 int(secc_run_state), f"SECC state {int(secc_run_state)}"
                             )
+                        dc_data["dc_charge_power"] = (
+                            _signed_dc_charge_power(
+                                charge_realtime.get("pileOutputPower"),
+                                secc_run_state=(
+                                    int(secc_run_state)
+                                    if secc_run_state is not None
+                                    else None
+                                ),
+                            )
+                            if "pileOutputPower" in charge_realtime
+                            else last_dc.get("dc_charge_power")
+                        )
+                        if (
+                            secc_run_state is not None
+                            and int(secc_run_state) == 8
+                            and dc_data.get("v2x_status") not in {"manual", "pending"}
+                        ):
+                            dc_data["v2x_status"] = "bidirectional"
                         output_power = float(
                             charge_realtime.get("pileOutputPower") or 0
                         )
@@ -784,6 +798,14 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         elif discharging:
                             # AI/bidirectional mode — no user-started timed session
                             dc_data["v2x_status"] = "bidirectional"
+                        elif dc_data.get("dc_charger_status") == "Discharging" or (
+                            _float_or_none(dc_data.get("dc_charge_power")) or 0.0
+                        ) < -0.05:
+                            dc_data["v2x_status"] = (
+                                dc_data["v2x_status"]
+                                if dc_data.get("v2x_status") in {"manual", "pending"}
+                                else "bidirectional"
+                            )
                         else:
                             dc_data["v2x_status"] = "off"
                     except SigenergyCloudAuthError:
