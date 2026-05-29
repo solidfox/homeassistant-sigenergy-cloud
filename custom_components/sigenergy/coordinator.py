@@ -29,6 +29,22 @@ _DC_SLOW_INTERVAL = timedelta(hours=1)
 _DC_RARE_INTERVAL = timedelta(hours=6)
 _ACTIVE_ALARMS_INTERVAL = timedelta(minutes=30)
 _RATE_LIMIT_BACKOFF_UNTIL = 0.0
+_DC_STATUS_CARRY_FORWARD_KEYS = (
+    "plugged_in",
+    "dc_charge_power",
+    "ev_soc",
+    "secc_run_state",
+    "dc_charger_status",
+    "v2x_status",
+    "v2x_discharge_enabled",
+    "v2x_has_car",
+    "v2x_has_disclaimer",
+    "v2x_has_used",
+    "v2x_discharge_settings",
+    "current_session_started_at",
+    "session_energy_charged",
+    "lifetime_energy_dispensed",
+)
 
 
 class _RateLimitBackoff(Exception):
@@ -86,6 +102,22 @@ def _is_recent(updated_at: float | None, interval: timedelta) -> bool:
         updated_at is not None
         and time.monotonic() - updated_at < interval.total_seconds()
     )
+
+
+def _status_dc_data_from_last(
+    last_dc: dict[str, Any],
+    *,
+    station_is_charging: bool | None,
+    single_dc: bool,
+) -> dict[str, Any]:
+    """Seed DC status data with last-known slow fields between endpoint polls."""
+    dc_data = {key: last_dc.get(key) for key in _DC_STATUS_CARRY_FORWARD_KEYS}
+    dc_data["is_charging"] = (
+        station_is_charging
+        if single_dc and station_is_charging is not None
+        else last_dc.get("is_charging")
+    )
+    return dc_data
 
 
 def _energy_flow_pv_power(flow: dict[str, Any], last: dict[str, Any]) -> float | None:
@@ -543,24 +575,11 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             dc_chargers: dict[str, dict[str, Any]] = {}
             for dc_sn in dc_sns:
                 last_dc = (last.get("dc_chargers") or {}).get(dc_sn, {})
-                dc_data: dict[str, Any] = {
-                    "is_charging": station_is_charging
-                    if len(dc_sns) == 1 and station_is_charging is not None
-                    else last_dc.get("is_charging"),
-                    "plugged_in": last_dc.get("plugged_in"),
-                    "dc_charge_power": last_dc.get("dc_charge_power"),
-                    "ev_soc": last_dc.get("ev_soc"),
-                    "secc_run_state": last_dc.get("secc_run_state"),
-                    "dc_charger_status": last_dc.get("dc_charger_status"),
-                    "v2x_status": last_dc.get("v2x_status"),
-                    "current_session_started_at": last_dc.get(
-                        "current_session_started_at"
-                    ),
-                    "session_energy_charged": last_dc.get("session_energy_charged"),
-                    "lifetime_energy_dispensed": last_dc.get(
-                        "lifetime_energy_dispensed"
-                    ),
-                }
+                dc_data = _status_dc_data_from_last(
+                    last_dc,
+                    station_is_charging=station_is_charging,
+                    single_dc=len(dc_sns) == 1,
+                )
                 dc_active = (
                     fast_polling
                     or (ev_power is not None and abs(ev_power) > 0.05)
