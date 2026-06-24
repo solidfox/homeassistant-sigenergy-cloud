@@ -6,9 +6,13 @@ import time
 from typing import TYPE_CHECKING
 
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
-from homeassistant.helpers import entity_registry as er
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from sigenergy_cloud import (
     InstantManualControl,
@@ -19,7 +23,7 @@ from sigenergy_cloud import (
 )
 import voluptuous as vol
 
-from .const import CONF_REGION, DOMAIN
+from .const import CONF_REGION, DOMAIN, enabled_modules_from_options
 from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
 from .data import SigenData
 
@@ -173,8 +177,13 @@ async def async_setup_entry(
     except SigenergyCloudError as exc:
         raise ConfigEntryNotReady(exc) from exc
 
-    settings_coordinator = SigenSettingsCoordinator(hass, client)
-    status_coordinator = SigenStatusCoordinator(hass, client)
+    enabled_modules = enabled_modules_from_options(entry.options)
+    settings_coordinator = SigenSettingsCoordinator(
+        hass, client, enabled_modules=enabled_modules
+    )
+    status_coordinator = SigenStatusCoordinator(
+        hass, client, enabled_modules=enabled_modules
+    )
 
     await settings_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()

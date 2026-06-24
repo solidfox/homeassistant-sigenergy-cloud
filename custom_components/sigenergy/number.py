@@ -14,6 +14,7 @@ from homeassistant.components.number import (
 from homeassistant.const import PERCENTAGE, UnitOfPower, UnitOfTime
 from sigenergy_cloud import BatteryLevelSettings, PeakShavingSlot
 
+from .const import MODULE_EVDC, MODULE_STATION_SETTINGS
 from .entity import SigenDCChargerSettingsEntity, SigenSettingsEntity
 
 if TYPE_CHECKING:
@@ -120,32 +121,38 @@ async def async_setup_entry(
 
     entities: list[NumberEntity] = []
 
-    for desc in POWER_LIMIT_NUMBERS:
-        entities.append(SigenPowerLimitNumber(coordinator, station_id, desc))
-    for desc in BATTERY_NUMBERS:
-        entities.append(SigenBatterySOCNumber(coordinator, station_id, desc))
+    if coordinator.module_enabled(MODULE_STATION_SETTINGS):
+        for desc in POWER_LIMIT_NUMBERS:
+            entities.append(SigenPowerLimitNumber(coordinator, station_id, desc))
+        for desc in BATTERY_NUMBERS:
+            entities.append(SigenBatterySOCNumber(coordinator, station_id, desc))
 
-    # Peak shaving slot numbers — one per slot in the current schedule
-    schedule = coordinator.data.get("peak_shaving") if coordinator.data else None
-    if schedule:
-        for slot in schedule.slots:
-            entities.append(SigenPeakShavingSlotNumber(coordinator, station_id, slot))
+        # Peak shaving slot numbers — one per slot in the current schedule
+        schedule = coordinator.data.get("peak_shaving") if coordinator.data else None
+        if schedule:
+            for slot in schedule.slots:
+                entities.append(
+                    SigenPeakShavingSlotNumber(coordinator, station_id, slot)
+                )
 
     # DC charger settings + V2X session params (only when a DC charger is present)
-    for dc_sn in coordinator.dc_sns():
-        entities.append(SigenDCChargerPowerNumber(coordinator, station_id, dc_sn))
-        entities.append(SigenDCChargerStopSOCNumber(coordinator, station_id, dc_sn))
-        entities.append(
-            SigenDCChargerDischargePowerNumber(coordinator, station_id, dc_sn)
-        )
-        entities.append(
-            SigenDCChargerDischargeCutoffSOCNumber(coordinator, station_id, dc_sn)
-        )
-        entities.append(
-            SigenDCChargerBatteryBoostCutoffSOCNumber(coordinator, station_id, dc_sn)
-        )
-        entities.append(SigenV2XPowerCapNumber(coordinator, station_id, dc_sn))
-        entities.append(SigenV2XDurationNumber(coordinator, station_id, dc_sn))
+    if coordinator.module_enabled(MODULE_EVDC):
+        for dc_sn in coordinator.dc_sns():
+            entities.append(SigenDCChargerPowerNumber(coordinator, station_id, dc_sn))
+            entities.append(SigenDCChargerStopSOCNumber(coordinator, station_id, dc_sn))
+            entities.append(
+                SigenDCChargerDischargePowerNumber(coordinator, station_id, dc_sn)
+            )
+            entities.append(
+                SigenDCChargerDischargeCutoffSOCNumber(coordinator, station_id, dc_sn)
+            )
+            entities.append(
+                SigenDCChargerBatteryBoostCutoffSOCNumber(
+                    coordinator, station_id, dc_sn
+                )
+            )
+            entities.append(SigenV2XPowerCapNumber(coordinator, station_id, dc_sn))
+            entities.append(SigenV2XDurationNumber(coordinator, station_id, dc_sn))
 
     async_add_entities(entities)
 

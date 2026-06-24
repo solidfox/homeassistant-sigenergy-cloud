@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
 
+from .const import MODULE_EVDC
 from .entity import SigenDCChargerStatusEntity
+from .evdc_start_guard import EVDCStartReadyGate
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -23,6 +25,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up Sigenergy button entities."""
     data = entry.runtime_data
+    if not data.status_coordinator.module_enabled(MODULE_EVDC):
+        return
+
     dc_sns = data.status_coordinator.dc_sns()
     if not dc_sns:
         return
@@ -68,8 +73,14 @@ class SigenStartV2XButton(SigenDCChargerStatusEntity, ButtonEntity):
         super().__init__(status_coordinator, station_id, dc_sn, "start_v2x_discharge")
         self._settings = settings_coordinator
         self._client = client
+        self._start_ready_gate = EVDCStartReadyGate(self, client, dc_sn)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._start_ready_gate.attributes()
 
     async def async_press(self) -> None:
+        await self._start_ready_gate.wait()
         await self._client.start_v2x_discharge(
             duration_minutes=self._settings.get_v2x_duration_minutes(self._dc_sn),
             power_cap_kw=self._settings.get_v2x_power_cap(self._dc_sn),

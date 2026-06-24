@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.components.select import SelectEntity
 
+from .const import MODULE_EVDC, MODULE_STATION_SETTINGS
 from .entity import SigenDCChargerSettingsEntity, SigenSettingsEntity
 
 if TYPE_CHECKING:
@@ -34,20 +35,23 @@ async def async_setup_entry(
 ) -> None:
     """Set up Sigenergy select entities."""
     data = entry.runtime_data
-    entities: list[SelectEntity] = [
-        SigenOperationalModeSelect(
-            data.settings_coordinator,
-            data.client.station_id,
-        )
-    ]
-    for dc_sn in data.settings_coordinator.dc_sns():
+    entities: list[SelectEntity] = []
+    if data.settings_coordinator.module_enabled(MODULE_STATION_SETTINGS):
         entities.append(
-            SigenDCChargerModeSelect(
+            SigenOperationalModeSelect(
                 data.settings_coordinator,
                 data.client.station_id,
-                dc_sn,
             )
         )
+    if data.settings_coordinator.module_enabled(MODULE_EVDC):
+        for dc_sn in data.settings_coordinator.dc_sns():
+            entities.append(
+                SigenDCChargerModeSelect(
+                    data.settings_coordinator,
+                    data.client.station_id,
+                    dc_sn,
+                )
+            )
     async_add_entities(entities)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import unittest
@@ -18,6 +19,9 @@ def _install_home_assistant_stubs() -> None:
     sigenergy_cloud = types.ModuleType("sigenergy_cloud")
 
     class ConfigEntryAuthFailed(Exception):
+        pass
+
+    class HomeAssistantError(Exception):
         pass
 
     class DataUpdateCoordinator:
@@ -37,6 +41,7 @@ def _install_home_assistant_stubs() -> None:
         pass
 
     exceptions.ConfigEntryAuthFailed = ConfigEntryAuthFailed
+    exceptions.HomeAssistantError = HomeAssistantError
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.UpdateFailed = UpdateFailed
     sigenergy_cloud.SigenergyCloudAuthError = SigenergyCloudAuthError
@@ -64,6 +69,9 @@ sys.modules["custom_components.sigenergy"] = PACKAGE
 const = types.ModuleType("custom_components.sigenergy.const")
 const.DOMAIN = "sigenergy"
 const.LOGGER = types.SimpleNamespace(warning=lambda *args, **kwargs: None)
+const.MODULE_EVDC = "evdc"
+const.MODULE_FORECAST = "sigen_ai_forecast"
+const.MODULE_STATION_SETTINGS = "station_settings"
 sys.modules["custom_components.sigenergy.const"] = const
 
 spec = importlib.util.spec_from_file_location(
@@ -75,8 +83,49 @@ coordinator = importlib.util.module_from_spec(spec)
 sys.modules["custom_components.sigenergy.coordinator"] = coordinator
 spec.loader.exec_module(coordinator)
 
+guard_spec = importlib.util.spec_from_file_location(
+    "custom_components.sigenergy.evdc_start_guard",
+    REPO_ROOT / "custom_components" / "sigenergy" / "evdc_start_guard.py",
+)
+assert guard_spec is not None and guard_spec.loader is not None
+evdc_start_guard = importlib.util.module_from_spec(guard_spec)
+sys.modules["custom_components.sigenergy.evdc_start_guard"] = evdc_start_guard
+guard_spec.loader.exec_module(evdc_start_guard)
+
 _status_dc_data_from_last = coordinator._status_dc_data_from_last
 _signed_dc_charge_power = coordinator._signed_dc_charge_power
+_plug_status_is_plugged_in = coordinator._plug_status_is_plugged_in
+_dc_charger_status_is_start_ready = coordinator._dc_charger_status_is_start_ready
+_secc_run_state_is_start_ready = coordinator._secc_run_state_is_start_ready
+_read_start_readiness = evdc_start_guard._read_start_readiness
+
+
+class _FakeGuardClient:
+    """Minimal async client for EVDC start-readiness tests."""
+
+    def __init__(
+        self,
+        *,
+        plug_status=True,
+        realtime: dict | None = None,
+        charger_status=None,
+    ) -> None:
+        self.plug_status = plug_status
+        self.realtime = realtime or {}
+        self.charger_status = charger_status
+        self.calls: list[str] = []
+
+    async def dc_plug_status(self, *, dc_sn: str):
+        self.calls.append("dc_plug_status")
+        return self.plug_status
+
+    async def dc_charge_realtime(self, *, dc_sn: str):
+        self.calls.append("dc_charge_realtime")
+        return self.realtime
+
+    async def dc_status(self, *, dc_sn: str):
+        self.calls.append("dc_status")
+        return self.charger_status
 
 
 class StatusDcDataFromLastTest(unittest.TestCase):
@@ -137,6 +186,102 @@ class SignedDcChargePowerTest(unittest.TestCase):
 
     def test_negative_power_remains_negative_without_secc_hint(self) -> None:
         self.assertEqual(_signed_dc_charge_power(-3.2, secc_run_state=None), -3.2)
+
+
+class PlugStatusTest(unittest.TestCase):
+    """Tests for EVDC plug-status normalization."""
+
+    def test_string_zero_is_not_plugged_in(self) -> None:
+        self.assertIs(_plug_status_is_plugged_in("0"), False)
+
+    def test_plugged_in_label_is_plugged_in(self) -> None:
+        self.assertIs(_plug_status_is_plugged_in("Plugged In"), True)
+
+    def test_none_remains_unknown(self) -> None:
+        self.assertIsNone(_plug_status_is_plugged_in(None))
+
+
+class EVDCStartReadinessTest(unittest.TestCase):
+    """Tests for EVDC app-status start-readiness normalization."""
+
+    def test_secc_idle_is_start_ready(self) -> None:
+        self.assertIs(_secc_run_state_is_start_ready(1), True)
+
+    def test_secc_fault_is_not_start_ready(self) -> None:
+        self.assertIs(_secc_run_state_is_start_ready("9"), False)
+
+    def test_status_ready_is_start_ready(self) -> None:
+        self.assertIs(_dc_charger_status_is_start_ready("Ready"), True)
+
+    def test_status_plugged_in_is_start_ready(self) -> None:
+        self.assertIs(_dc_charger_status_is_start_ready("Plugged In"), True)
+
+    def test_status_establishing_is_not_start_ready(self) -> None:
+        self.assertIs(
+            _dc_charger_status_is_start_ready("Establishing communication link"),
+            False,
+        )
+
+    def test_status_charging_fault_is_not_start_ready(self) -> None:
+        self.assertIs(_dc_charger_status_is_start_ready("Charging fault"), False)
+
+    def test_status_dict_uses_description(self) -> None:
+        self.assertIs(
+            _dc_charger_status_is_start_ready({"statusDesc": "Idle"}),
+            True,
+        )
+
+    def test_status_dict_uses_numeric_status(self) -> None:
+        self.assertIs(
+            _dc_charger_status_is_start_ready({"status": 1}),
+            True,
+        )
+
+    def test_guard_skips_realtime_when_unplugged(self) -> None:
+        client = _FakeGuardClient(plug_status=False, realtime={"seccRunState": 1})
+
+        readiness = asyncio.run(_read_start_readiness(client, "dc1"))
+
+        self.assertIs(readiness.ready, False)
+        self.assertEqual(client.calls, ["dc_plug_status"])
+
+    def test_guard_uses_secc_without_status_fallback_when_decisive(self) -> None:
+        client = _FakeGuardClient(
+            plug_status=True,
+            realtime={"seccRunState": 9},
+            charger_status="Ready",
+        )
+
+        readiness = asyncio.run(_read_start_readiness(client, "dc1"))
+
+        self.assertIs(readiness.ready, False)
+        self.assertEqual(client.calls, ["dc_plug_status", "dc_charge_realtime"])
+
+    def test_guard_accepts_idle_secc_state(self) -> None:
+        client = _FakeGuardClient(
+            plug_status=True,
+            realtime={"seccRunState": 1},
+        )
+
+        readiness = asyncio.run(_read_start_readiness(client, "dc1"))
+
+        self.assertIs(readiness.ready, True)
+        self.assertEqual(client.calls, ["dc_plug_status", "dc_charge_realtime"])
+
+    def test_guard_falls_back_to_charger_status_when_secc_missing(self) -> None:
+        client = _FakeGuardClient(
+            plug_status=True,
+            realtime={},
+            charger_status="Plugged In",
+        )
+
+        readiness = asyncio.run(_read_start_readiness(client, "dc1"))
+
+        self.assertIs(readiness.ready, True)
+        self.assertEqual(
+            client.calls,
+            ["dc_plug_status", "dc_charge_realtime", "dc_status"],
+        )
 
 
 if __name__ == "__main__":

@@ -7,7 +7,8 @@
         "data": {
           "username": "Email address",
           "password": "Password",
-          "region": "Region"
+          "region": "Region",
+          "enabled_modules": "Enabled modules"
         }
       },
       "reauth_confirm": {
@@ -28,6 +29,17 @@
       "reauth_successful": "Re-authentication was successful."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sigenergy Cloud modules",
+        "description": "Choose which cloud-backed modules Home Assistant should keep updated.",
+        "data": {
+          "enabled_modules": "Enabled modules"
+        }
+      }
+    }
+  },
   "selector": {
     "region": {
       "options": {
@@ -35,6 +47,13 @@
         "cn": "China",
         "apac": "Asia-Pacific",
         "us": "United States"
+      }
+    },
+    "enabled_modules": {
+      "options": {
+        "station_settings": "Station settings and controls",
+        "sigen_ai_forecast": "Sigen AI forecast",
+        "evdc": "EVDC charger and V2X"
       }
     }
   },

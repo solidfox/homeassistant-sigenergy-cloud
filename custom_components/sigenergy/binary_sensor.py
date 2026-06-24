@@ -9,6 +9,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 
+from .const import MODULE_EVDC
 from .entity import SigenDCChargerStatusEntity
 
 if TYPE_CHECKING:
@@ -26,6 +27,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up Sigenergy binary sensor entities."""
     data = entry.runtime_data
+    if not data.status_coordinator.module_enabled(MODULE_EVDC):
+        return
+
     async_add_entities(
         [
             SigenDCChargerPluggedInBinarySensor(

@@ -16,6 +16,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 from homeassistant.util import dt as dt_util
 
+from .const import MODULE_EVDC, MODULE_FORECAST, MODULE_STATION_SETTINGS
 from .entity import (
     SigenDCChargerSettingsEntity,
     SigenDCChargerStatusEntity,
@@ -414,109 +415,113 @@ async def async_setup_entry(
         )
         for description in ENERGY_FLOW_SENSORS
     ]
-    entities.extend(
-        SigenForecastCurveSensor(
-            data.settings_coordinator,
-            data.client.station_id,
-            description,
-        )
-        for description in FORECAST_CURVE_SENSORS
-    )
-    entities.append(
-        SigenInstantManualControlSensor(
-            data.settings_coordinator,
-            data.client.station_id,
-        )
-    )
-    for dc_sn in data.status_coordinator.dc_sns():
+    if data.settings_coordinator.module_enabled(MODULE_FORECAST):
         entities.extend(
-            SigenDCChargerNumericSensor(
-                data.status_coordinator,
+            SigenForecastCurveSensor(
+                data.settings_coordinator,
                 data.client.station_id,
-                dc_sn,
                 description,
             )
-            for description in DC_CHARGER_SENSORS
+            for description in FORECAST_CURVE_SENSORS
         )
-        entities.extend(
-            [
-                SigenDCChargerStatusSensor(
-                    data.status_coordinator,
-                    data.client.station_id,
-                    dc_sn,
-                ),
-                SigenV2XStatusSensor(
-                    data.status_coordinator,
-                    data.client.station_id,
-                    dc_sn,
-                ),
-                SigenDCChargerCurrentSessionStartedAtSensor(
-                    data.status_coordinator,
-                    data.client.station_id,
-                    dc_sn,
-                ),
-            ]
+    if data.settings_coordinator.module_enabled(MODULE_STATION_SETTINGS):
+        entities.append(
+            SigenInstantManualControlSensor(
+                data.settings_coordinator,
+                data.client.station_id,
+            )
         )
 
-    for dc_sn in data.settings_coordinator.dc_sns():
-        for key, payload_key, translation_key in DC_CHARGER_ENERGY_TOTAL_SENSORS:
+    if data.status_coordinator.module_enabled(MODULE_EVDC):
+        for dc_sn in data.status_coordinator.dc_sns():
+            entities.extend(
+                SigenDCChargerNumericSensor(
+                    data.status_coordinator,
+                    data.client.station_id,
+                    dc_sn,
+                    description,
+                )
+                for description in DC_CHARGER_SENSORS
+            )
+            entities.extend(
+                [
+                    SigenDCChargerStatusSensor(
+                        data.status_coordinator,
+                        data.client.station_id,
+                        dc_sn,
+                    ),
+                    SigenV2XStatusSensor(
+                        data.status_coordinator,
+                        data.client.station_id,
+                        dc_sn,
+                    ),
+                    SigenDCChargerCurrentSessionStartedAtSensor(
+                        data.status_coordinator,
+                        data.client.station_id,
+                        dc_sn,
+                    ),
+                ]
+            )
+
+        for dc_sn in data.settings_coordinator.dc_sns():
+            for key, payload_key, translation_key in DC_CHARGER_ENERGY_TOTAL_SENSORS:
+                entities.append(
+                    SigenDCChargerEnergyTotalSensor(
+                        data.settings_coordinator,
+                        data.client.station_id,
+                        dc_sn,
+                        key=key,
+                        payload_key=payload_key,
+                        translation_key=translation_key,
+                    )
+                )
+            for (
+                key,
+                payload_key,
+                translation_key,
+                icon,
+            ) in DC_CHARGER_LIFETIME_TOTAL_SENSORS:
+                entities.append(
+                    SigenDCChargerLifetimeTotalSensor(
+                        data.settings_coordinator,
+                        data.client.station_id,
+                        dc_sn,
+                        key=key,
+                        payload_key=payload_key,
+                        translation_key=translation_key,
+                        icon=icon,
+                    )
+                )
             entities.append(
-                SigenDCChargerEnergyTotalSensor(
+                SigenDCChargerActiveAlarmSensor(
                     data.settings_coordinator,
                     data.client.station_id,
                     dc_sn,
-                    key=key,
-                    payload_key=payload_key,
-                    translation_key=translation_key,
                 )
             )
-        for (
-            key,
-            payload_key,
-            translation_key,
-            icon,
-        ) in DC_CHARGER_LIFETIME_TOTAL_SENSORS:
             entities.append(
-                SigenDCChargerLifetimeTotalSensor(
+                SigenDCChargerOCPPStatusSensor(
                     data.settings_coordinator,
                     data.client.station_id,
                     dc_sn,
-                    key=key,
-                    payload_key=payload_key,
-                    translation_key=translation_key,
-                    icon=icon,
                 )
             )
-        entities.append(
-            SigenDCChargerActiveAlarmSensor(
-                data.settings_coordinator,
-                data.client.station_id,
-                dc_sn,
+            entities.append(
+                SigenDCChargerLastSessionSensor(
+                    data.settings_coordinator,
+                    data.client.station_id,
+                    dc_sn,
+                )
             )
-        )
-        entities.append(
-            SigenDCChargerOCPPStatusSensor(
-                data.settings_coordinator,
-                data.client.station_id,
-                dc_sn,
+            entities.extend(
+                SigenDCChargerLastSessionFieldSensor(
+                    data.settings_coordinator,
+                    data.client.station_id,
+                    dc_sn,
+                    description,
+                )
+                for description in DC_CHARGER_LAST_SESSION_FIELD_SENSORS
             )
-        )
-        entities.append(
-            SigenDCChargerLastSessionSensor(
-                data.settings_coordinator,
-                data.client.station_id,
-                dc_sn,
-            )
-        )
-        entities.extend(
-            SigenDCChargerLastSessionFieldSensor(
-                data.settings_coordinator,
-                data.client.station_id,
-                dc_sn,
-                description,
-            )
-            for description in DC_CHARGER_LAST_SESSION_FIELD_SENSORS
-        )
 
     async_add_entities(entities)
 

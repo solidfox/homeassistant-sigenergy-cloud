@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from sigenergy_cloud import (
@@ -15,13 +16,47 @@ from sigenergy_cloud import (
     SigenergyCloudError,
 )
 
-from .const import CONF_REGION, DOMAIN, LOGGER, REGIONS
+from .const import (
+    CONF_ENABLED_MODULES,
+    CONF_REGION,
+    DEFAULT_ENABLED_MODULES,
+    DOMAIN,
+    LOGGER,
+    REGIONS,
+    enabled_modules_from_options,
+)
+
+
+def _modules_schema(default_modules: list[str]) -> vol.Schema:
+    """Return the shared enabled-modules schema."""
+    return vol.Schema(
+        {
+            vol.Optional(
+                CONF_ENABLED_MODULES,
+                default=default_modules,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=list(DEFAULT_ENABLED_MODULES),
+                    multiple=True,
+                    translation_key=CONF_ENABLED_MODULES,
+                )
+            )
+        }
+    )
 
 
 class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Sigenergy."""
 
     VERSION = 3
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Create the options flow."""
+        return SigenOptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self,
@@ -44,9 +79,20 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(station_id)
                 self._abort_if_unique_id_configured()
+                config_data = {
+                    CONF_USERNAME: user_input[CONF_USERNAME],
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    CONF_REGION: user_input.get(CONF_REGION, "eu"),
+                }
+                options = {
+                    CONF_ENABLED_MODULES: user_input.get(
+                        CONF_ENABLED_MODULES, list(DEFAULT_ENABLED_MODULES)
+                    )
+                }
                 return self.async_create_entry(
                     title=f"Sigenergy ({user_input[CONF_USERNAME]})",
-                    data=user_input,
+                    data=config_data,
+                    options=options,
                 )
 
         return self.async_show_form(
@@ -75,7 +121,17 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             translation_key="region",
                         ),
                     ),
-                }
+                    vol.Optional(
+                        CONF_ENABLED_MODULES,
+                        default=list(DEFAULT_ENABLED_MODULES),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=list(DEFAULT_ENABLED_MODULES),
+                            multiple=True,
+                            translation_key=CONF_ENABLED_MODULES,
+                        )
+                    ),
+                },
             ),
             errors=errors,
         )
@@ -146,3 +202,27 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return str(client.station_id)
         finally:
             await client.close()
+
+
+class SigenOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle Sigenergy options."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> config_entries.ConfigFlowResult:
+        """Manage optional cloud fetch modules."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        enabled_modules = enabled_modules_from_options(self.config_entry.options)
+        default_modules = [
+            module for module in DEFAULT_ENABLED_MODULES if module in enabled_modules
+        ]
+        return self.async_show_form(
+            step_id="init",
+            data_schema=_modules_schema(default_modules),
+        )

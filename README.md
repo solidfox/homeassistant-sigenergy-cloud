@@ -12,6 +12,8 @@ battery, grid, PV, smart load, and DC charger controls in Home Assistant.
 ## Features
 
 - Config flow with Sigenergy Cloud username, password, and region selection.
+- Optional cloud fetch modules for station settings, Sigen AI forecasts, and
+  EVDC/V2X data, so unused API groups can be disabled from integration options.
 - Energy flow sensors for PV, grid, load, battery, battery SOC, and EV charging.
 - Battery SOC, grid import/export, peak shaving, and operational mode controls.
 - DC charger status, session, OCPP, alarm, charge-limit, V2X, and bidirectional
