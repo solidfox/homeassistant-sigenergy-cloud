@@ -9,7 +9,6 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers import selector
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from sigenergy_cloud import (
     SigenergyCloudAuthError,
     SigenergyCloudClient,
@@ -25,6 +24,7 @@ from .const import (
     REGIONS,
     enabled_modules_from_options,
 )
+from .session import SigenergyCloudSession
 
 
 def _modules_schema(default_modules: list[str]) -> vol.Schema:
@@ -192,7 +192,7 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             username=data[CONF_USERNAME],
             password=data[CONF_PASSWORD],
             region=data.get(CONF_REGION, "eu"),
-            session=async_get_clientsession(self.hass),
+            session=SigenergyCloudSession(self.hass),
         )
         try:
             await client.connect()

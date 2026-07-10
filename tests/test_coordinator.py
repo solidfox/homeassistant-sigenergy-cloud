@@ -15,6 +15,7 @@ def _install_home_assistant_stubs() -> None:
     homeassistant = types.ModuleType("homeassistant")
     exceptions = types.ModuleType("homeassistant.exceptions")
     helpers = types.ModuleType("homeassistant.helpers")
+    aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
     update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
     sigenergy_cloud = types.ModuleType("sigenergy_cloud")
 
@@ -44,6 +45,7 @@ def _install_home_assistant_stubs() -> None:
     exceptions.HomeAssistantError = HomeAssistantError
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.UpdateFailed = UpdateFailed
+    aiohttp_client.async_get_clientsession = lambda hass: None
     sigenergy_cloud.SigenergyCloudAuthError = SigenergyCloudAuthError
     sigenergy_cloud.SigenergyCloudError = SigenergyCloudError
     sigenergy_cloud.SigenergyCloudRateLimitError = SigenergyCloudRateLimitError
@@ -51,6 +53,7 @@ def _install_home_assistant_stubs() -> None:
     sys.modules.setdefault("homeassistant", homeassistant)
     sys.modules.setdefault("homeassistant.exceptions", exceptions)
     sys.modules.setdefault("homeassistant.helpers", helpers)
+    sys.modules.setdefault("homeassistant.helpers.aiohttp_client", aiohttp_client)
     sys.modules.setdefault(
         "homeassistant.helpers.update_coordinator",
         update_coordinator,
@@ -72,6 +75,7 @@ const.LOGGER = types.SimpleNamespace(warning=lambda *args, **kwargs: None)
 const.MODULE_EVDC = "evdc"
 const.MODULE_FORECAST = "sigen_ai_forecast"
 const.MODULE_STATION_SETTINGS = "station_settings"
+const.SIGENERGY_CLOUD_USER_AGENT = "homeassistant-sigenergy/0.1.2"
 sys.modules["custom_components.sigenergy.const"] = const
 
 spec = importlib.util.spec_from_file_location(
@@ -92,12 +96,22 @@ evdc_start_guard = importlib.util.module_from_spec(guard_spec)
 sys.modules["custom_components.sigenergy.evdc_start_guard"] = evdc_start_guard
 guard_spec.loader.exec_module(evdc_start_guard)
 
+session_spec = importlib.util.spec_from_file_location(
+    "custom_components.sigenergy.session",
+    REPO_ROOT / "custom_components" / "sigenergy" / "session.py",
+)
+assert session_spec is not None and session_spec.loader is not None
+session_module = importlib.util.module_from_spec(session_spec)
+sys.modules["custom_components.sigenergy.session"] = session_module
+session_spec.loader.exec_module(session_module)
+
 _status_dc_data_from_last = coordinator._status_dc_data_from_last
 _signed_dc_charge_power = coordinator._signed_dc_charge_power
 _plug_status_is_plugged_in = coordinator._plug_status_is_plugged_in
 _dc_charger_status_is_start_ready = coordinator._dc_charger_status_is_start_ready
 _secc_run_state_is_start_ready = coordinator._secc_run_state_is_start_ready
 _read_start_readiness = evdc_start_guard._read_start_readiness
+_sigenergy_headers = session_module._sigenergy_headers
 
 
 class _FakeGuardClient:
@@ -282,6 +296,22 @@ class EVDCStartReadinessTest(unittest.TestCase):
             client.calls,
             ["dc_plug_status", "dc_charge_realtime", "dc_status"],
         )
+
+
+class SigenergySessionTest(unittest.TestCase):
+    """Tests for Sigenergy Cloud HTTP session request headers."""
+
+    def test_sigenergy_headers_add_user_agent(self) -> None:
+        self.assertEqual(
+            _sigenergy_headers()["User-Agent"],
+            "homeassistant-sigenergy/0.1.2",
+        )
+
+    def test_sigenergy_headers_preserve_existing_headers(self) -> None:
+        headers = _sigenergy_headers({"Authorization": "Bearer token"})
+
+        self.assertEqual(headers["Authorization"], "Bearer token")
+        self.assertEqual(headers["User-Agent"], "homeassistant-sigenergy/0.1.2")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ LOGGER: Logger = getLogger(__package__)
 DOMAIN = "sigenergy"
 CONF_REGION = "region"
 CONF_ENABLED_MODULES = "enabled_modules"
+SIGENERGY_CLOUD_USER_AGENT = "homeassistant-sigenergy/0.1.2"
 
 REGIONS = ["eu", "cn", "apac", "us"]
 REGION_LABELS = {

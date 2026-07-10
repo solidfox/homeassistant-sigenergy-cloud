@@ -13,7 +13,6 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from sigenergy_cloud import (
     InstantManualControl,
     InstantManualMode,
@@ -23,9 +22,14 @@ from sigenergy_cloud import (
 )
 import voluptuous as vol
 
-from .const import CONF_REGION, DOMAIN, enabled_modules_from_options
+from .const import (
+    CONF_REGION,
+    DOMAIN,
+    enabled_modules_from_options,
+)
 from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
 from .data import SigenData
+from .session import SigenergyCloudSession
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -167,7 +171,7 @@ async def async_setup_entry(
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         region=entry.data.get(CONF_REGION, "eu"),
-        session=async_get_clientsession(hass),
+        session=SigenergyCloudSession(hass),
     )
 
     try:
