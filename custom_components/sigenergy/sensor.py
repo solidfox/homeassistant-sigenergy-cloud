@@ -112,6 +112,17 @@ ENERGY_FLOW_SENSORS: tuple[SigenSensorDescription, ...] = (
     ),
 )
 
+STATION_SETTINGS_SENSORS: tuple[SigenSensorDescription, ...] = (
+    SigenSensorDescription(
+        key="battery_capacity",
+        data_key="battery_capacity",
+        translation_key="battery_capacity",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        icon="mdi:home-battery-outline",
+    ),
+)
+
 FORECAST_CURVE_SENSORS: tuple[SigenForecastCurveDescription, ...] = (
     SigenForecastCurveDescription(
         key="solar_power_forecast",
@@ -425,6 +436,14 @@ async def async_setup_entry(
             for description in FORECAST_CURVE_SENSORS
         )
     if data.settings_coordinator.module_enabled(MODULE_STATION_SETTINGS):
+        entities.extend(
+            SigenStationSettingsSensor(
+                data.settings_coordinator,
+                data.client.station_id,
+                description,
+            )
+            for description in STATION_SETTINGS_SENSORS
+        )
         entities.append(
             SigenInstantManualControlSensor(
                 data.settings_coordinator,
@@ -564,6 +583,37 @@ class SigenEnergyFlowSensor(SigenStatusEntity, SensorEntity):
             "third_party_pv_power_kw": self.coordinator.data.get(
                 "third_party_pv_power"
             ),
+        }
+
+
+class SigenStationSettingsSensor(SigenSettingsEntity, SensorEntity):
+    """Numeric station metadata/settings sensor from the cloud app API."""
+
+    entity_description: SigenSensorDescription
+
+    def __init__(
+        self,
+        coordinator: SigenSettingsCoordinator,
+        station_id: str,
+        description: SigenSensorDescription,
+    ) -> None:
+        super().__init__(coordinator, station_id, description.key)
+        self.entity_description = description
+
+    @property
+    def native_value(self) -> float | None:
+        if self.coordinator.data is None:
+            return None
+        return _float_value(self.coordinator.data.get(self.entity_description.data_key))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "description": (
+                "Total SigenStor battery capacity reported by the Sigenergy "
+                "cloud station-home endpoint."
+            ),
+            "source_endpoint": "device/owner/station/home",
         }
 
 

@@ -90,6 +90,9 @@
       "battery_soc": {
         "name": "Battery SOC"
       },
+      "battery_capacity": {
+        "name": "Battery Capacity"
+      },
       "solar_power_forecast": {
         "name": "Solar Power Forecast"
       },

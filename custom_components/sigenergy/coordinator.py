@@ -451,6 +451,13 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
 
             if station_settings_enabled:
+                station_home = await self._cached_data(
+                    safe,
+                    "station_home",
+                    self.client.refresh_station,
+                    _DC_RARE_INTERVAL,
+                    (self.data or {}).get("station_home"),
+                )
                 instant_manual = await safe(
                     self.client.instant_manual_control(), "instant_manual"
                 )
@@ -463,6 +470,12 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 data.update(
                     {
+                        "station_home": station_home,
+                        "battery_capacity": (
+                            station_home.get("batteryCapacity")
+                            if isinstance(station_home, dict)
+                            else None
+                        ),
                         "operational_mode": await safe(
                             self.client.current_operational_mode(),
                             "operational_mode",

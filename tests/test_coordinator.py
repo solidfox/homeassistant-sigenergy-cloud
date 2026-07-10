@@ -26,8 +26,15 @@ def _install_home_assistant_stubs() -> None:
         pass
 
     class DataUpdateCoordinator:
+        def __init__(self, *args, **kwargs) -> None:
+            self.data = None
+            self.update_interval = kwargs.get("update_interval")
+
         def __class_getitem__(cls, item):
             return cls
+
+        def async_set_updated_data(self, data):
+            self.data = data
 
     class UpdateFailed(Exception):
         pass
@@ -140,6 +147,64 @@ class _FakeGuardClient:
     async def dc_status(self, *, dc_sn: str):
         self.calls.append("dc_status")
         return self.charger_status
+
+
+class _FakeSettingsClient:
+    """Minimal async client for settings coordinator tests."""
+
+    dc_sns = ()
+    dc_sn = None
+
+    async def refresh_station(self):
+        return {
+            "stationId": "12025061000219",
+            "acSnList": [],
+            "dcSnList": [],
+            "batteryCapacity": "24.0",
+        }
+
+    async def available_operational_modes(self):
+        return {
+            "defaultWorkingModes": [{"label": "Sigen AI Mode", "value": "0"}],
+            "energyProfileItems": [],
+        }
+
+    async def instant_manual_control(self):
+        return types.SimpleNamespace(enabled=False)
+
+    async def current_operational_mode(self):
+        return "Sigen AI Mode"
+
+    async def battery_levels(self):
+        return types.SimpleNamespace()
+
+    async def grid_export_limit(self):
+        return {}
+
+    async def grid_import_limit(self):
+        return {}
+
+    async def battery_export_limitation(self):
+        return {}
+
+    async def peak_shaving_schedule(self):
+        return types.SimpleNamespace()
+
+
+class SettingsCoordinatorTest(unittest.TestCase):
+    """Tests for settings coordinator normalized station metadata."""
+
+    def test_station_home_battery_capacity_is_exposed(self) -> None:
+        settings = coordinator.SigenSettingsCoordinator(
+            None,
+            _FakeSettingsClient(),
+            enabled_modules={const.MODULE_STATION_SETTINGS},
+        )
+
+        data = asyncio.run(settings._async_update_data())
+
+        self.assertEqual(data["battery_capacity"], "24.0")
+        self.assertEqual(data["station_home"]["batteryCapacity"], "24.0")
 
 
 class StatusDcDataFromLastTest(unittest.TestCase):
