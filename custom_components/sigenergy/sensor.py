@@ -169,6 +169,34 @@ FORECAST_CURVE_SENSORS: tuple[SigenForecastCurveDescription, ...] = (
             "curve for plan inspection."
         ),
     ),
+    SigenForecastCurveDescription(
+        key="buy_price_forecast",
+        payload_key="buyPrice",
+        values_key="prices",
+        translation_key="buy_price_forecast",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="SEK/kWh",
+        icon="mdi:cash-arrow-right",
+        attribute_description=(
+            "Sigenergy AI 15-minute gross electricity purchase-price curve. "
+            "The state is the next price in SEK/kWh; attributes expose the "
+            "full curve for EMS fallback planning."
+        ),
+    ),
+    SigenForecastCurveDescription(
+        key="sell_price_forecast",
+        payload_key="sellPrice",
+        values_key="prices",
+        translation_key="sell_price_forecast",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="SEK/kWh",
+        icon="mdi:cash-arrow-left",
+        attribute_description=(
+            "Sigenergy AI 15-minute gross electricity export-price curve. "
+            "The state is the next price in SEK/kWh; attributes expose the "
+            "full curve for EMS fallback planning."
+        ),
+    ),
 )
 
 _INSTANT_MANUAL_MODE_STATES = {

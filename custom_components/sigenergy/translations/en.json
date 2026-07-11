@@ -102,6 +102,12 @@
       "battery_soc_forecast": {
         "name": "Battery SOC Forecast"
       },
+      "buy_price_forecast": {
+        "name": "Buy Price Forecast"
+      },
+      "sell_price_forecast": {
+        "name": "Sell Price Forecast"
+      },
       "instant_manual_control": {
         "name": "Instant Manual Control",
         "state": {
