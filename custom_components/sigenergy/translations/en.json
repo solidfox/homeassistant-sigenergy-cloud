@@ -64,11 +64,23 @@
       },
       "stop_v2x_discharge": {
         "name": "Stop Forced V2X Discharge"
+      },
+      "restart_aio": {
+        "name": "Restart AIO (power cycle)"
+      },
+      "toggle_aio_power": {
+        "name": "Toggle AIO Power"
+      },
+      "refresh_device_status": {
+        "name": "Refresh Device Status"
       }
     },
     "binary_sensor": {
       "dc_charger_plugged_in": {
         "name": "Plugged In"
+      },
+      "dc_charger_topology_online": {
+        "name": "Topology Online"
       }
     },
     "sensor": {
@@ -123,6 +135,12 @@
       },
       "ev_soc": {
         "name": "Vehicle SOC"
+      },
+      "topology_device_status": {
+        "name": "Topology Device Status"
+      },
+      "topology_communicate_status": {
+        "name": "Topology Communicate Status"
       },
       "secc_run_state": {
         "name": "SECC State"

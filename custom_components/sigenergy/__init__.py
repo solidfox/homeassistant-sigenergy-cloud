@@ -48,6 +48,7 @@ PLATFORMS: list[Platform] = [
 
 SERVICE_SET_INSTANT_MANUAL_CONTROL = "set_instant_manual_control"
 SERVICE_DISABLE_INSTANT_MANUAL_CONTROL = "disable_instant_manual_control"
+SERVICE_REFRESH_DEVICE_STATUS = "refresh_device_status"
 
 _INSTANT_MANUAL_MODE_ALIASES = {
     "0": InstantManualMode.CHARGING,
@@ -81,6 +82,15 @@ _SET_INSTANT_MANUAL_SCHEMA = vol.Schema(
 
 _DISABLE_INSTANT_MANUAL_SCHEMA = vol.Schema(
     {
+        vol.Optional("entry_id"): cv.string,
+    }
+)
+
+_REFRESH_DEVICE_STATUS_SCHEMA = vol.Schema(
+    {
+        vol.Optional("duration_seconds", default=180): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=600)
+        ),
         vol.Optional("entry_id"): cv.string,
     }
 )
@@ -227,8 +237,6 @@ async def async_reload_entry(
 
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register station-level Sigenergy services once."""
-    if hass.services.has_service(DOMAIN, SERVICE_SET_INSTANT_MANUAL_CONTROL):
-        return
 
     async def async_set_instant_manual_control(call) -> None:
         entry = _service_config_entry(hass, call.data.get("entry_id"))
@@ -264,18 +272,37 @@ def _async_register_services(hass: HomeAssistant) -> None:
             }
         )
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_INSTANT_MANUAL_CONTROL,
-        async_set_instant_manual_control,
-        schema=_SET_INSTANT_MANUAL_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_DISABLE_INSTANT_MANUAL_CONTROL,
-        async_disable_instant_manual_control,
-        schema=_DISABLE_INSTANT_MANUAL_SCHEMA,
-    )
+    async def async_refresh_device_status(call) -> None:
+        entry = _service_config_entry(hass, call.data.get("entry_id"))
+        data = entry.runtime_data
+        duration = int(call.data.get("duration_seconds", 180))
+        await data.status_coordinator.async_request_device_status_poll(
+            source="service_refresh",
+            duration_s=float(duration),
+            enable_fast_poll=duration > 0,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_INSTANT_MANUAL_CONTROL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_INSTANT_MANUAL_CONTROL,
+            async_set_instant_manual_control,
+            schema=_SET_INSTANT_MANUAL_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_DISABLE_INSTANT_MANUAL_CONTROL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DISABLE_INSTANT_MANUAL_CONTROL,
+            async_disable_instant_manual_control,
+            schema=_DISABLE_INSTANT_MANUAL_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_DEVICE_STATUS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH_DEVICE_STATUS,
+            async_refresh_device_status,
+            schema=_REFRESH_DEVICE_STATUS_SCHEMA,
+        )
 
 
 def _service_config_entry(hass: HomeAssistant, entry_id: str | None) -> SigenConfigEntry:

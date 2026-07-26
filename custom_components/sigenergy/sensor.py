@@ -240,6 +240,18 @@ DC_CHARGER_SENSORS: tuple[SigenSensorDescription, ...] = (
         icon="mdi:chip",
     ),
     SigenSensorDescription(
+        key="topology_device_status",
+        data_key="topology_device_status",
+        translation_key="topology_device_status",
+        icon="mdi:lan",
+    ),
+    SigenSensorDescription(
+        key="topology_communicate_status",
+        data_key="topology_communicate_status",
+        translation_key="topology_communicate_status",
+        icon="mdi:access-point-network",
+    ),
+    SigenSensorDescription(
         key="session_energy_charged",
         data_key="session_energy_charged",
         translation_key="dc_charger_session_energy_charged",
@@ -864,7 +876,11 @@ class SigenDCChargerNumericSensor(SigenDCChargerStatusEntity, SensorEntity):
         val = dc_data.get(self.entity_description.data_key)
         if val is None:
             return None
-        if self.entity_description.data_key == "secc_run_state":
+        if self.entity_description.data_key in {
+            "secc_run_state",
+            "topology_device_status",
+            "topology_communicate_status",
+        }:
             return int(val)
         return float(val)
 

@@ -53,3 +53,31 @@ disable_instant_manual_control:
         text:
       name: Config Entry ID
       description: Optional target config entry when multiple Sigenergy stations are configured.
+
+refresh_device_status:
+  name: Refresh Device Status
+  description: >
+    Force an immediate poll of mySigen topology deviceStatus/communicateStatus
+    and EVDC status endpoints. Use after AIO power changes or from automations
+    that need fresher offline/alarm state than the normal 2-minute poll.
+  fields:
+    duration_seconds:
+      required: false
+      default: 180
+      selector:
+        number:
+          min: 0
+          max: 600
+          step: 15
+          mode: box
+          unit_of_measurement: s
+      name: Fast-poll duration
+      description: >
+        How long to keep 15s fast polling after the forced refresh.
+        Set 0 for a single forced poll only.
+    entry_id:
+      required: false
+      selector:
+        text:
+      name: Config Entry ID
+      description: Optional target config entry when multiple Sigenergy stations are configured.

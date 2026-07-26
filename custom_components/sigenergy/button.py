@@ -42,6 +42,11 @@ async def async_setup_entry(
                 data.status_coordinator, station_id, data.client
             )
         )
+        entities.append(
+            SigenRefreshDeviceStatusButton(
+                data.status_coordinator, station_id
+            )
+        )
 
     if data.status_coordinator.module_enabled(MODULE_EVDC):
         dc_sns = data.status_coordinator.dc_sns()
@@ -124,6 +129,36 @@ class SigenStopV2XButton(SigenDCChargerStatusEntity, ButtonEntity):
         await self.coordinator.async_request_refresh()
 
 
+class SigenRefreshDeviceStatusButton(SigenStatusEntity, ButtonEntity):
+    """Force an immediate topology + EVDC status poll (for automations)."""
+
+    _attr_translation_key = "refresh_device_status"
+    _attr_icon = "mdi:refresh"
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(
+        self,
+        status_coordinator: SigenStatusCoordinator,
+        station_id: str,
+    ) -> None:
+        super().__init__(status_coordinator, station_id, "refresh_device_status")
+        self._attr_extra_state_attributes = {
+            "description": (
+                "Forces topology deviceStatus/communicateStatus and EVDC "
+                "status endpoints to refresh now, then keeps a short fast-poll "
+                "window. Prefer service sigenergy.refresh_device_status for "
+                "automations."
+            ),
+        }
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_request_device_status_poll(
+            source="manual_button",
+            duration_s=60.0,
+            enable_fast_poll=True,
+        )
+
+
 class SigenRestartAioButton(SigenStatusEntity, ButtonEntity):
     """Power-cycle the SigenStor AIO to clear latched EVSE/SECC estcom faults."""
 
@@ -147,17 +182,27 @@ class SigenRestartAioButton(SigenStatusEntity, ButtonEntity):
         self._attr_extra_state_attributes = {
             "description": (
                 "Minimal AIO power-cycle via cloud POST /device/aio/on-off: off, "
-                "poll until plant Power-off, wait for device/dcevse/status to change "
-                "(EVDC reaction, ~10s observed), then powerOn=true and poll until "
-                "running. Clears latched EVDC SECC state 9 / Charging fault. Drops "
-                "site inverter/battery output briefly."
+                "poll until plant Power-off, wait until topology reports EVDC "
+                "offline (device/devicetreepanel/topology deviceStatus / "
+                "communicateStatus), then powerOn=true and poll until running. "
+                "Clears latched EVDC SECC state 9 / Charging fault. Drops site "
+                "inverter/battery output briefly. Never leaves plant powered off."
             ),
         }
 
     async def async_press(self) -> None:
+        # Aggressive deviceStatus polling while power is changing.
+        self.coordinator.start_aio_power_fast_poll(
+            source="aio_power_cycle", duration_s=self._POST_CYCLE_DURATION_S
+        )
+        await self.coordinator.async_request_refresh()
         try:
-            # off_dwell_s=0: turn back on as soon as home reports Power-off.
-            result = await self._client.restart_aio(off_dwell_s=0.0, poll_s=2.0)
+            result = await self._client.restart_aio(
+                off_dwell_s=0.0,
+                poll_s=2.0,
+                wait_evdc_offline=True,
+                evdc_offline_wait_s=120.0,
+            )
         except Exception as err:  # noqa: BLE001 - surface cloud failures in UI
             raise HomeAssistantError(f"Sigen AIO restart failed: {err}") from err
         if not result.get("powered_on"):
@@ -168,7 +213,11 @@ class SigenRestartAioButton(SigenStatusEntity, ButtonEntity):
             **(self._attr_extra_state_attributes or {}),
             "last_restart_result": result,
         }
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_request_device_status_poll(
+            source="aio_power_cycle",
+            duration_s=self._POST_CYCLE_DURATION_S,
+            enable_fast_poll=True,
+        )
         self._start_post_cycle_refresh_burst()
 
     def _start_post_cycle_refresh_burst(self) -> None:
@@ -196,6 +245,8 @@ class SigenRestartAioButton(SigenStatusEntity, ButtonEntity):
                     self._post_cycle_refresh_unsub()
                     self._post_cycle_refresh_unsub = None
                 return
+            # Keep topology deviceStatus forced during the burst window.
+            status.request_force_device_status_poll()
             await status.async_request_refresh()
             if settings is not None:
                 await settings.async_request_refresh()
@@ -230,13 +281,21 @@ class SigenToggleAioPowerButton(SigenStatusEntity, ButtonEntity):
         self._attr_extra_state_attributes = {
             "description": (
                 "Toggles Sigen AIO power once via POST /device/aio/on-off. "
-                "Disabled by default — prefer Restart AIO for recovery."
+                "Disabled by default — prefer Restart AIO for recovery. "
+                "Triggers aggressive topology deviceStatus polling afterward."
             ),
         }
 
     async def async_press(self) -> None:
+        self.coordinator.start_aio_power_fast_poll(
+            source="aio_power_toggle", duration_s=180.0
+        )
         try:
             await self._client.toggle_aio_power()
         except Exception as err:  # noqa: BLE001
             raise HomeAssistantError(f"Sigen AIO power toggle failed: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_request_device_status_poll(
+            source="aio_power_toggle",
+            duration_s=180.0,
+            enable_fast_poll=True,
+        )
