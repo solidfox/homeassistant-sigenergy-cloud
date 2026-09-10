@@ -11,7 +11,12 @@ from homeassistant.components.number import (
     NumberEntityDescription,
     NumberMode,
 )
-from homeassistant.const import PERCENTAGE, UnitOfPower, UnitOfTime
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfPower,
+    UnitOfTime,
+)
 from sigenergy_cloud import BatteryLevelSettings, PeakShavingSlot
 
 from .const import MODULE_EVDC, MODULE_STATION_SETTINGS
@@ -59,19 +64,19 @@ POWER_LIMIT_NUMBERS: tuple[SigenNumberDescription, ...] = (
     ),
 )
 
-# "Max Grid Connection Current" in the mySigen app. Cloud stores kW strings with
-# one decimal; the owner value may only be lowered below the installer ceiling.
+# "Max Grid Connection Current" in the mySigen app. Cloud stores ampere strings
+# with one decimal; the owner value may only be lowered below the installer ceiling.
 GRID_CONNECTION_LIMIT_NUMBER = SigenNumberDescription(
-    key="grid_connection_limit_kw",
+    key="grid_connection_limit_a",
     data_key="grid_connection_limit",
     translation_key="grid_connection_limit",
-    device_class=NumberDeviceClass.POWER,
-    native_unit_of_measurement=UnitOfPower.KILO_WATT,
+    device_class=NumberDeviceClass.CURRENT,
+    native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
     native_min_value=0.0,
-    native_max_value=100.0,
+    native_max_value=200.0,
     native_step=0.1,
     mode=NumberMode.BOX,
-    icon="mdi:transmission-tower",
+    icon="mdi:current-ac",
 )
 
 # ── Battery SOC levels ────────────────────────────────────────────────────────
@@ -241,7 +246,7 @@ class SigenPowerLimitNumber(SigenSettingsEntity, NumberEntity):
 
 class SigenGridConnectionLimitNumber(SigenSettingsEntity, NumberEntity):
     """
-    Max grid connection limit ("Max Grid Connection Current" in the app), kW.
+    Max grid connection current ("Max Grid Connection Current" in the app), A.
 
     Backed by ``device/energy-profile/parallel/off/grid``. The state is the
     effective limit: the owner value when set, else the installer ceiling.
@@ -282,9 +287,9 @@ class SigenGridConnectionLimitNumber(SigenSettingsEntity, NumberEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self._limit_data()
         return {
-            "owner_limit_kw": _limit_float(data.get("ownerSetLimitation")),
-            "installer_max_kw": _limit_float(data.get("installerSetLimitation")),
-            "effective_limit_kw": _limit_float(data.get("currentLimitation")),
+            "owner_limit_a": _limit_float(data.get("ownerSetLimitation")),
+            "installer_max_a": _limit_float(data.get("installerSetLimitation")),
+            "effective_limit_a": _limit_float(data.get("currentLimitation")),
             "enabled": data.get("enable"),
             "source_endpoint": "device/energy-profile/parallel/off/grid",
         }

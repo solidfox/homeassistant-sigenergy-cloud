@@ -112,10 +112,10 @@
         "name": "Grid Import Limit Installer Max"
       },
       "grid_connection_limit_installer_max": {
-        "name": "Grid Connection Limit Installer Max"
+        "name": "Grid Connection Current Installer Max"
       },
       "grid_connection_limit_effective": {
-        "name": "Grid Connection Limit Effective"
+        "name": "Grid Connection Current Effective"
       },
       "battery_max_charge_power": {
         "name": "Battery Max Charge Power Limit"
@@ -265,7 +265,7 @@
         "name": "Grid Import Limit"
       },
       "grid_connection_limit": {
-        "name": "Grid Connection Limit"
+        "name": "Grid Connection Current Limit"
       },
       "battery_charge_soc": {
         "name": "Battery Charge Limit"
@@ -309,7 +309,7 @@
         "name": "Grid Import Limit"
       },
       "grid_connection_limit_enabled": {
-        "name": "Grid Connection Limit"
+        "name": "Grid Connection Current Limit"
       },
       "battery_export_enabled": {
         "name": "Block Battery Export to Grid"

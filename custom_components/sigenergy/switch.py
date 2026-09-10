@@ -160,14 +160,14 @@ class SigenGridConnectionLimitSwitch(SigenSettingsEntity, SwitchEntity):
     async def _set_enabled(self, enabled: bool) -> None:
         current = self.coordinator.data.get("grid_connection_limit", {})
         # Re-send the value the cloud currently applies so only `enable` changes.
-        limit_kw = float(
+        limit_a = float(
             current.get("ownerSetLimitation")
             or current.get("currentLimitation")
             or current.get("installerSetLimitation")
             or 0
         )
         await self.coordinator.client.set_grid_connection_limit(
-            limit_kw, enabled=enabled
+            limit_a, enabled=enabled
         )
         self.coordinator.async_update_local_data(
             {"grid_connection_limit": {**current, "enable": enabled}}

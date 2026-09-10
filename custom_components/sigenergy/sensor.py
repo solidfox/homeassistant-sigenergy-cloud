@@ -13,7 +13,13 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfPower
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfElectricCurrent,
+    UnitOfEnergy,
+    UnitOfPower,
+)
 from homeassistant.util import dt as dt_util
 from sigenergy_cloud import is_unlimited_power
 
@@ -142,6 +148,13 @@ _GRID_LIMIT_KW = {
     "entity_category": EntityCategory.DIAGNOSTIC,
 }
 
+_GRID_LIMIT_A = {
+    "device_class": SensorDeviceClass.CURRENT,
+    "state_class": SensorStateClass.MEASUREMENT,
+    "native_unit_of_measurement": UnitOfElectricCurrent.AMPERE,
+    "entity_category": EntityCategory.DIAGNOSTIC,
+}
+
 # Installer-set ceilings and effective limits from the app's Grid Settings page.
 # Owners can only lower below the installer value; these expose the headroom.
 LIMIT_SENSORS: tuple[SigenLimitSensorDescription, ...] = (
@@ -176,26 +189,26 @@ LIMIT_SENSORS: tuple[SigenLimitSensorDescription, ...] = (
         data_key="grid_connection_limit",
         value_key="installerSetLimitation",
         translation_key="grid_connection_limit_installer_max",
-        icon="mdi:transmission-tower",
+        icon="mdi:current-ac",
         source_endpoint="device/energy-profile/parallel/off/grid/{stationId}",
         attribute_description=(
-            "Installer-set ceiling for Max Grid Connection Current (grid "
-            "connection point limit). The owner value cannot exceed this."
+            "Installer-set ceiling for Max Grid Connection Current in amperes. "
+            "The owner value cannot exceed this."
         ),
-        **_GRID_LIMIT_KW,
+        **_GRID_LIMIT_A,
     ),
     SigenLimitSensorDescription(
         key="grid_connection_limit_effective",
         data_key="grid_connection_limit",
         value_key="currentLimitation",
         translation_key="grid_connection_limit_effective",
-        icon="mdi:transmission-tower",
+        icon="mdi:current-ac",
         source_endpoint="device/energy-profile/parallel/off/grid/{stationId}",
         attribute_description=(
-            "Limit the cloud currently applies at the grid connection point: "
+            "Max grid connection current the cloud currently applies (A): "
             "the owner value when set, otherwise the installer ceiling."
         ),
-        **_GRID_LIMIT_KW,
+        **_GRID_LIMIT_A,
     ),
     SigenLimitSensorDescription(
         key="battery_max_charge_power",
