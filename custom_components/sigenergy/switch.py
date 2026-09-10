@@ -42,6 +42,7 @@ async def async_setup_entry(
             [
                 SigenExportLimitSwitch(data.settings_coordinator, station_id),
                 SigenImportLimitSwitch(data.settings_coordinator, station_id),
+                SigenGridConnectionLimitSwitch(data.settings_coordinator, station_id),
                 SigenBatteryExportSwitch(data.settings_coordinator, station_id),
             ]
         )
@@ -138,6 +139,45 @@ class SigenImportLimitSwitch(SigenSettingsEntity, SwitchEntity):
         self.coordinator.async_update_local_data(
             {"import_limit": {**current, "enable": False}}
         )
+
+
+class SigenGridConnectionLimitSwitch(SigenSettingsEntity, SwitchEntity):
+    """Enable/disable the max grid connection limit (parallel/off/grid)."""
+
+    _attr_translation_key = "grid_connection_limit_enabled"
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_icon = "mdi:transmission-tower"
+
+    def __init__(self, coordinator: SigenSettingsCoordinator, station_id: str) -> None:
+        super().__init__(coordinator, station_id, "grid_connection_limit_enabled")
+
+    @property
+    def is_on(self) -> bool | None:
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("grid_connection_limit", {}).get("enable")
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        current = self.coordinator.data.get("grid_connection_limit", {})
+        # Re-send the value the cloud currently applies so only `enable` changes.
+        limit_kw = float(
+            current.get("ownerSetLimitation")
+            or current.get("currentLimitation")
+            or current.get("installerSetLimitation")
+            or 0
+        )
+        await self.coordinator.client.set_grid_connection_limit(
+            limit_kw, enabled=enabled
+        )
+        self.coordinator.async_update_local_data(
+            {"grid_connection_limit": {**current, "enable": enabled}}
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set_enabled(False)
 
 
 class SigenBatteryExportSwitch(SigenSettingsEntity, SwitchEntity):

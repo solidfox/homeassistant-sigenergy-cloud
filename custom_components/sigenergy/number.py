@@ -59,6 +59,21 @@ POWER_LIMIT_NUMBERS: tuple[SigenNumberDescription, ...] = (
     ),
 )
 
+# "Max Grid Connection Current" in the mySigen app. Cloud stores kW strings with
+# one decimal; the owner value may only be lowered below the installer ceiling.
+GRID_CONNECTION_LIMIT_NUMBER = SigenNumberDescription(
+    key="grid_connection_limit_kw",
+    data_key="grid_connection_limit",
+    translation_key="grid_connection_limit",
+    device_class=NumberDeviceClass.POWER,
+    native_unit_of_measurement=UnitOfPower.KILO_WATT,
+    native_min_value=0.0,
+    native_max_value=100.0,
+    native_step=0.1,
+    mode=NumberMode.BOX,
+    icon="mdi:transmission-tower",
+)
+
 # ── Battery SOC levels ────────────────────────────────────────────────────────
 
 BATTERY_NUMBERS: tuple[SigenNumberDescription, ...] = (
@@ -124,6 +139,11 @@ async def async_setup_entry(
     if coordinator.module_enabled(MODULE_STATION_SETTINGS):
         for desc in POWER_LIMIT_NUMBERS:
             entities.append(SigenPowerLimitNumber(coordinator, station_id, desc))
+        entities.append(
+            SigenGridConnectionLimitNumber(
+                coordinator, station_id, GRID_CONNECTION_LIMIT_NUMBER
+            )
+        )
         for desc in BATTERY_NUMBERS:
             entities.append(SigenBatterySOCNumber(coordinator, station_id, desc))
 
@@ -184,6 +204,26 @@ class SigenPowerLimitNumber(SigenSettingsEntity, NumberEntity):
         raw = limit_data.get("maxLimitationOwner")
         return float(raw) if raw is not None else None
 
+    @property
+    def native_max_value(self) -> float:
+        # Owners can only lower the limit below the installer ceiling.
+        installer = _limit_float(self._limit_data().get("maxLimitationInstaller"))
+        return installer or self.entity_description.native_max_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._limit_data()
+        return {
+            "installer_max_kw": _limit_float(data.get("maxLimitationInstaller")),
+            "effective_limit_kw": _limit_float(data.get("maxLimitation")),
+            "enabled": data.get("enable"),
+        }
+
+    def _limit_data(self) -> dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get(self.entity_description.data_key) or {}
+
     async def async_set_native_value(self, value: float) -> None:
         current = self.coordinator.data.get(self.entity_description.data_key) or {}
         enabled = current.get("enable", True)
@@ -197,6 +237,79 @@ class SigenPowerLimitNumber(SigenSettingsEntity, NumberEntity):
         self.coordinator.async_update_local_data(
             {self.entity_description.data_key: new_limit}
         )
+
+
+class SigenGridConnectionLimitNumber(SigenSettingsEntity, NumberEntity):
+    """
+    Max grid connection limit ("Max Grid Connection Current" in the app), kW.
+
+    Backed by ``device/energy-profile/parallel/off/grid``. The state is the
+    effective limit: the owner value when set, else the installer ceiling.
+    """
+
+    entity_description: SigenNumberDescription
+
+    def __init__(
+        self,
+        coordinator: SigenSettingsCoordinator,
+        station_id: str,
+        description: SigenNumberDescription,
+    ) -> None:
+        super().__init__(coordinator, station_id, description.key)
+        self.entity_description = description
+
+    def _limit_data(self) -> dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get(self.entity_description.data_key) or {}
+
+    @property
+    def native_value(self) -> float | None:
+        data = self._limit_data()
+        owner = _limit_float(data.get("ownerSetLimitation"))
+        if owner is not None:
+            return owner
+        return _limit_float(data.get("currentLimitation")) or _limit_float(
+            data.get("installerSetLimitation")
+        )
+
+    @property
+    def native_max_value(self) -> float:
+        installer = _limit_float(self._limit_data().get("installerSetLimitation"))
+        return installer or self.entity_description.native_max_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._limit_data()
+        return {
+            "owner_limit_kw": _limit_float(data.get("ownerSetLimitation")),
+            "installer_max_kw": _limit_float(data.get("installerSetLimitation")),
+            "effective_limit_kw": _limit_float(data.get("currentLimitation")),
+            "enabled": data.get("enable"),
+            "source_endpoint": "device/energy-profile/parallel/off/grid",
+        }
+
+    async def async_set_native_value(self, value: float) -> None:
+        current = self._limit_data()
+        enabled = current.get("enable", True)
+        await self.coordinator.client.set_grid_connection_limit(value, enabled=enabled)
+        new_limit = dict(current)
+        new_limit["enable"] = enabled
+        new_limit["ownerSetLimitation"] = f"{value:.1f}"
+        new_limit["currentLimitation"] = f"{value:.1f}"
+        self.coordinator.async_update_local_data(
+            {self.entity_description.data_key: new_limit}
+        )
+
+
+def _limit_float(raw: Any) -> float | None:
+    """Parse a cloud limit string; empty strings mean 'not set'."""
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 # ── Battery SOC numbers ───────────────────────────────────────────────────────

@@ -187,6 +187,26 @@ class _FakeSettingsClient:
     async def battery_export_limitation(self):
         return {}
 
+    async def grid_connection_limit(self):
+        return {
+            "enable": True,
+            "currentLimitation": "13.80",
+            "ownerSetLimitation": "",
+            "installerSetLimitation": "13.8",
+        }
+
+    async def battery_power_limit(self):
+        return {
+            "batteryMaxChargingPower": "4294967.295",
+            "batteryMaxDischargingPower": "4294967.295",
+        }
+
+    async def solar_power_limit(self):
+        return {"powerLimit": "4294967.295"}
+
+    async def backup_reserve(self):
+        return {"stationId": 12025061000219, "backupReserve": 3, "operationMode": 1}
+
     async def peak_shaving_schedule(self):
         return types.SimpleNamespace()
 
@@ -205,6 +225,20 @@ class SettingsCoordinatorTest(unittest.TestCase):
 
         self.assertEqual(data["battery_capacity"], "24.0")
         self.assertEqual(data["station_home"]["batteryCapacity"], "24.0")
+
+    def test_grid_and_power_limits_are_exposed(self) -> None:
+        settings = coordinator.SigenSettingsCoordinator(
+            None,
+            _FakeSettingsClient(),
+            enabled_modules={const.MODULE_STATION_SETTINGS},
+        )
+
+        data = asyncio.run(settings._async_update_data())
+
+        self.assertEqual(data["grid_connection_limit"]["installerSetLimitation"], "13.8")
+        self.assertEqual(data["battery_power_limit"]["batteryMaxChargingPower"], "4294967.295")
+        self.assertEqual(data["solar_power_limit"]["powerLimit"], "4294967.295")
+        self.assertEqual(data["backup_reserve"]["backupReserve"], 3)
 
 
 class StatusDcDataFromLastTest(unittest.TestCase):

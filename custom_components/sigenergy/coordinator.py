@@ -499,6 +499,32 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "battery_export": await safe(
                             self.client.battery_export_limitation(), "battery_export"
                         ),
+                        # "Max Grid Connection Current" in the app; owner may lower
+                        # below installerSetLimitation. Polled every cycle like the
+                        # import/export limits so writes are confirmed promptly.
+                        "grid_connection_limit": await safe(
+                            self.client.grid_connection_limit(),
+                            "grid_connection_limit",
+                        ),
+                        # Read-only ceilings that change rarely; refresh hourly.
+                        "battery_power_limit": await self._cached_data(
+                            safe,
+                            "battery_power_limit",
+                            self.client.battery_power_limit,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "solar_power_limit": await self._cached_data(
+                            safe,
+                            "solar_power_limit",
+                            self.client.solar_power_limit,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "backup_reserve": await self._cached_data(
+                            safe,
+                            "backup_reserve",
+                            self.client.backup_reserve,
+                            _DC_SLOW_INTERVAL,
+                        ),
                         "peak_shaving": await safe(
                             self.client.peak_shaving_schedule(), "peak_shaving"
                         ),
