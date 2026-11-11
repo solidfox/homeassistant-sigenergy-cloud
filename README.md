@@ -16,6 +16,10 @@ battery, grid, PV, smart load, and DC charger controls in Home Assistant.
   EVDC/V2X data, so unused API groups can be disabled from integration options.
 - Energy flow sensors for PV, grid, load, battery, battery SOC, and EV charging.
 - Battery SOC, grid import/export, peak shaving, and operational mode controls.
+- Grid connection current limit ("Max Grid Connection Current" in the app, A)
+  number and enable switch, plus diagnostic sensors for the installer-set
+  ceilings of the grid export/import/connection limits, battery and solar power
+  limits, and backup reserve. Owner limits are capped at the installer value.
 - DC charger status, session, OCPP, alarm, charge-limit, V2X, and bidirectional
   controls when a Sigenergy DC charger is available on the account.
 

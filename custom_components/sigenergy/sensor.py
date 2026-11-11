@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -13,8 +14,15 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfElectricCurrent,
+    UnitOfEnergy,
+    UnitOfPower,
+)
 from homeassistant.util import dt as dt_util
+from sigenergy_cloud import is_unlimited_power
 
 from .const import MODULE_EVDC, MODULE_FORECAST, MODULE_STATION_SETTINGS
 from .entity import (
@@ -120,6 +128,142 @@ STATION_SETTINGS_SENSORS: tuple[SigenSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         icon="mdi:home-battery-outline",
+    ),
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class SigenLimitSensorDescription(SensorEntityDescription):
+    """One numeric field from a settings-coordinator limit payload."""
+
+    data_key: str
+    value_key: str
+    source_endpoint: str
+    attribute_description: str
+
+
+_GRID_LIMIT_KW = {
+    "device_class": SensorDeviceClass.POWER,
+    "state_class": SensorStateClass.MEASUREMENT,
+    "native_unit_of_measurement": UnitOfPower.KILO_WATT,
+    "entity_category": EntityCategory.DIAGNOSTIC,
+}
+
+_GRID_LIMIT_A = {
+    "device_class": SensorDeviceClass.CURRENT,
+    "state_class": SensorStateClass.MEASUREMENT,
+    "native_unit_of_measurement": UnitOfElectricCurrent.AMPERE,
+    "entity_category": EntityCategory.DIAGNOSTIC,
+}
+
+# Installer-set ceilings and effective limits from the app's Grid Settings page.
+# Owners can only lower below the installer value; these expose the headroom.
+LIMIT_SENSORS: tuple[SigenLimitSensorDescription, ...] = (
+    SigenLimitSensorDescription(
+        key="export_limit_installer_max",
+        data_key="export_limit",
+        value_key="maxLimitationInstaller",
+        translation_key="export_limit_installer_max",
+        icon="mdi:transmission-tower-export",
+        source_endpoint="device/energy-profile/grid/limitation/export/{stationId}",
+        attribute_description=(
+            "Installer-set ceiling for the grid export power limit. The owner "
+            "value (number.grid_export_limit) cannot exceed this."
+        ),
+        **_GRID_LIMIT_KW,
+    ),
+    SigenLimitSensorDescription(
+        key="import_limit_installer_max",
+        data_key="import_limit",
+        value_key="maxLimitationInstaller",
+        translation_key="import_limit_installer_max",
+        icon="mdi:transmission-tower-import",
+        source_endpoint="device/energy-profile/grid/limitation/import/{stationId}",
+        attribute_description=(
+            "Installer-set ceiling for the grid import power limit. The owner "
+            "value (number.grid_import_limit) cannot exceed this."
+        ),
+        **_GRID_LIMIT_KW,
+    ),
+    SigenLimitSensorDescription(
+        key="grid_connection_limit_installer_max",
+        data_key="grid_connection_limit",
+        value_key="installerSetLimitation",
+        translation_key="grid_connection_limit_installer_max",
+        icon="mdi:current-ac",
+        source_endpoint="device/energy-profile/parallel/off/grid/{stationId}",
+        attribute_description=(
+            "Installer-set ceiling for Max Grid Connection Current in amperes. "
+            "The owner value cannot exceed this."
+        ),
+        **_GRID_LIMIT_A,
+    ),
+    SigenLimitSensorDescription(
+        key="grid_connection_limit_effective",
+        data_key="grid_connection_limit",
+        value_key="currentLimitation",
+        translation_key="grid_connection_limit_effective",
+        icon="mdi:current-ac",
+        source_endpoint="device/energy-profile/parallel/off/grid/{stationId}",
+        attribute_description=(
+            "Max grid connection current the cloud currently applies (A): "
+            "the owner value when set, otherwise the installer ceiling."
+        ),
+        **_GRID_LIMIT_A,
+    ),
+    SigenLimitSensorDescription(
+        key="battery_max_charge_power",
+        data_key="battery_power_limit",
+        value_key="batteryMaxChargingPower",
+        translation_key="battery_max_charge_power",
+        icon="mdi:battery-arrow-up-outline",
+        source_endpoint="device/energy-profile/battery/limit/{stationId}",
+        attribute_description=(
+            "Battery Power Limit (charge) from the app. Unknown state with "
+            "attribute unlimited=true means no limit is configured."
+        ),
+        **_GRID_LIMIT_KW,
+    ),
+    SigenLimitSensorDescription(
+        key="battery_max_discharge_power",
+        data_key="battery_power_limit",
+        value_key="batteryMaxDischargingPower",
+        translation_key="battery_max_discharge_power",
+        icon="mdi:battery-arrow-down-outline",
+        source_endpoint="device/energy-profile/battery/limit/{stationId}",
+        attribute_description=(
+            "Battery Power Limit (discharge) from the app. Unknown state with "
+            "attribute unlimited=true means no limit is configured."
+        ),
+        **_GRID_LIMIT_KW,
+    ),
+    SigenLimitSensorDescription(
+        key="solar_power_limit",
+        data_key="solar_power_limit",
+        value_key="powerLimit",
+        translation_key="solar_power_limit",
+        icon="mdi:solar-power-variant-outline",
+        source_endpoint="device/energy-profile/solar/limit/{stationId}",
+        attribute_description=(
+            "PV output power limit. Unknown state with attribute "
+            "unlimited=true means no limit is configured."
+        ),
+        **_GRID_LIMIT_KW,
+    ),
+    SigenLimitSensorDescription(
+        key="backup_reserve",
+        data_key="backup_reserve",
+        value_key="backupReserve",
+        translation_key="backup_reserve",
+        icon="mdi:battery-lock",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        source_endpoint="device/setting/backup/reserve/{stationId}",
+        attribute_description=(
+            "Backup Reserve from the app's Backup Settings: battery SOC kept "
+            "for grid outages."
+        ),
     ),
 )
 
@@ -484,6 +628,14 @@ async def async_setup_entry(
             )
             for description in STATION_SETTINGS_SENSORS
         )
+        entities.extend(
+            SigenLimitSensor(
+                data.settings_coordinator,
+                data.client.station_id,
+                description,
+            )
+            for description in LIMIT_SENSORS
+        )
         entities.append(
             SigenInstantManualControlSensor(
                 data.settings_coordinator,
@@ -608,10 +760,7 @@ class SigenEnergyFlowSensor(SigenStatusEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        if (
-            self.entity_description.key != "pv_power"
-            or self.coordinator.data is None
-        ):
+        if self.entity_description.key != "pv_power" or self.coordinator.data is None:
             return None
         return {
             "description": (
@@ -654,6 +803,44 @@ class SigenStationSettingsSensor(SigenSettingsEntity, SensorEntity):
                 "cloud station-home endpoint."
             ),
             "source_endpoint": "device/owner/station/home",
+        }
+
+
+class SigenLimitSensor(SigenSettingsEntity, SensorEntity):
+    """Installer ceiling / effective limit read from a settings payload."""
+
+    entity_description: SigenLimitSensorDescription
+
+    def __init__(
+        self,
+        coordinator: SigenSettingsCoordinator,
+        station_id: str,
+        description: SigenLimitSensorDescription,
+    ) -> None:
+        super().__init__(coordinator, station_id, description.key)
+        self.entity_description = description
+
+    def _raw_value(self) -> Any:
+        payload = (self.coordinator.data or {}).get(self.entity_description.data_key)
+        if not isinstance(payload, dict):
+            return None
+        return payload.get(self.entity_description.value_key)
+
+    @property
+    def native_value(self) -> float | None:
+        raw = self._raw_value()
+        if is_unlimited_power(raw):
+            return None
+        return _float_value(raw)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        raw = self._raw_value()
+        return {
+            "description": self.entity_description.attribute_description,
+            "source_endpoint": self.entity_description.source_endpoint,
+            "source_key": self.entity_description.value_key,
+            "unlimited": is_unlimited_power(raw),
         }
 
 
@@ -717,7 +904,7 @@ def _next_prediction_value(points: list[tuple[datetime, float]]) -> float | None
 
 def _prediction_interval_hours(points: list[tuple[datetime, float]]) -> float:
     """Infer the forecast interval; HAR captures show 15-minute points."""
-    for previous, current in zip(points, points[1:], strict=False):
+    for previous, current in pairwise(points):
         delta = current[0] - previous[0]
         if delta > timedelta(0):
             return delta.total_seconds() / 3600
@@ -774,9 +961,7 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
         attrs: dict[str, Any] = {
             "description": self.entity_description.attribute_description,
             "source": "sigen_ai",
-            "source_endpoint": (
-                "prediction/predictData/get/predictData/{stationId}"
-            ),
+            "source_endpoint": ("prediction/predictData/get/predictData/{stationId}"),
             "updated_at": payload.get("nowTime"),
             "fetched_at": (coordinator_data or {}).get("prediction_data_fetched_at"),
             "refresh_interval_minutes": (coordinator_data or {}).get(
@@ -795,9 +980,7 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
             attrs["energy_remaining_today_kwh"] = _prediction_energy_kwh(
                 points, day_offset=0, future_only=True
             )
-            attrs["energy_tomorrow_kwh"] = _prediction_energy_kwh(
-                points, day_offset=1
-            )
+            attrs["energy_tomorrow_kwh"] = _prediction_energy_kwh(points, day_offset=1)
         return attrs
 
 
@@ -818,7 +1001,9 @@ class SigenInstantManualControlSensor(SigenSettingsEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return _instant_manual_state((self.coordinator.data or {}).get("instant_manual"))
+        return _instant_manual_state(
+            (self.coordinator.data or {}).get("instant_manual")
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -1073,7 +1258,7 @@ def _float_value(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

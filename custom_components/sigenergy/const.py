@@ -1,7 +1,8 @@
 """Constants for the Sigenergy integration."""
 
+from collections.abc import Mapping  # noqa: TC003
 from logging import Logger, getLogger
-from typing import Any, Mapping
+from typing import Any
 
 LOGGER: Logger = getLogger(__package__)
 

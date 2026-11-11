@@ -60,7 +60,7 @@ _DC_STATUS_CARRY_FORWARD_KEYS = (
 )
 
 
-class _RateLimitBackoff(Exception):
+class _RateLimitBackoff(Exception):  # noqa: N818
     """Raised internally to abort an update after the cloud rate-limits us."""
 
 
@@ -82,6 +82,7 @@ def _activate_rate_limit_backoff(label: str, exc: Exception) -> None:
             _RATE_LIMIT_BACKOFF_INTERVAL.total_seconds() / 60,
             exc,
         )
+
 
 _DCEVSE_STATUS_LABELS = {
     1: "Ready",
@@ -105,7 +106,7 @@ def _float_or_none(value: Any) -> float | None:
     """Return value as float, or None when the API value is missing/non-numeric."""
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -123,7 +124,7 @@ def _plug_status_is_plugged_in(value: Any) -> bool | None:
             return False
     try:
         return bool(int(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return bool(value)
 
 
@@ -131,7 +132,7 @@ def _int_or_none(value: Any) -> int | None:
     """Return value as int, or None when the API value is missing/non-numeric."""
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -164,7 +165,7 @@ def _secc_run_state_is_start_ready(value: Any) -> bool | None:
     return None
 
 
-def _dc_charger_status_is_start_ready(value: Any) -> bool | None:
+def _dc_charger_status_is_start_ready(value: Any) -> bool | None:  # noqa: PLR0911
     """Return whether charger status represents the app's ready/plugged-in state."""
     if isinstance(value, dict):
         for key in ("statusDesc", "statusName", "status", "label", "state"):
@@ -499,6 +500,32 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "battery_export": await safe(
                             self.client.battery_export_limitation(), "battery_export"
                         ),
+                        # "Max Grid Connection Current" in the app; owner may lower
+                        # below installerSetLimitation. Polled every cycle like the
+                        # import/export limits so writes are confirmed promptly.
+                        "grid_connection_limit": await safe(
+                            self.client.grid_connection_limit(),
+                            "grid_connection_limit",
+                        ),
+                        # Read-only ceilings that change rarely; refresh hourly.
+                        "battery_power_limit": await self._cached_data(
+                            safe,
+                            "battery_power_limit",
+                            self.client.battery_power_limit,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "solar_power_limit": await self._cached_data(
+                            safe,
+                            "solar_power_limit",
+                            self.client.solar_power_limit,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "backup_reserve": await self._cached_data(
+                            safe,
+                            "backup_reserve",
+                            self.client.backup_reserve,
+                            _DC_SLOW_INTERVAL,
+                        ),
                         "peak_shaving": await safe(
                             self.client.peak_shaving_schedule(), "peak_shaving"
                         ),
@@ -703,11 +730,11 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.set_fast_polling(source, False)
             self._fast_poll_clear_handles.pop(source, None)
 
-        try:
+        try:  # noqa: SIM105
             self._fast_poll_clear_handles[source] = self.hass.loop.call_later(
                 max(float(duration_s), 0.0), _clear
             )
-        except Exception:  # noqa: BLE001 - coordinator may run under stubs
+        except Exception:  # noqa: BLE001, S110 - coordinator may run under stubs
             pass
 
     async def async_request_device_status_poll(
@@ -835,8 +862,7 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or force_dc_endpoints
                 or (ev_power is not None and abs(ev_power) > 0.05)
                 or any(
-                    bool(dc.get("is_charging"))
-                    or dc.get("v2x_status") in v2x_statuses
+                    bool(dc.get("is_charging")) or dc.get("v2x_status") in v2x_statuses
                     for dc in dc_last_values
                 )
             )
@@ -1012,7 +1038,10 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 if not dc_data.get("is_charging"):
                     dc_data["current_session_started_at"] = None
-                elif current_session_start_ts is not None and current_session_start_ts > 0:
+                elif (
+                    current_session_start_ts is not None
+                    and current_session_start_ts > 0
+                ):
                     dc_data["current_session_started_at"] = int(
                         current_session_start_ts
                     )
@@ -1024,9 +1053,7 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     force=force_dc_endpoints or fast_polling or v2x_active,
                 ):
                     try:
-                        settings = await self.client.v2x_discharge_settings(
-                            dc_sn=dc_sn
-                        )
+                        settings = await self.client.v2x_discharge_settings(dc_sn=dc_sn)
                         info = await self.client.v2x_discharge_info(dc_sn=dc_sn)
                         realtime = await self.client.dc_discharge_realtime(dc_sn=dc_sn)
                         self._mark_refreshed(self._dc_v2x_updated_at, dc_sn)
@@ -1083,9 +1110,11 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         elif discharging:
                             # AI/bidirectional mode — no user-started timed session
                             dc_data["v2x_status"] = "bidirectional"
-                        elif dc_data.get("dc_charger_status") == "Discharging" or (
-                            _float_or_none(dc_data.get("dc_charge_power")) or 0.0
-                        ) < -0.05:
+                        elif (
+                            dc_data.get("dc_charger_status") == "Discharging"
+                            or (_float_or_none(dc_data.get("dc_charge_power")) or 0.0)
+                            < -0.05
+                        ):
                             dc_data["v2x_status"] = (
                                 dc_data["v2x_status"]
                                 if dc_data.get("v2x_status") in {"manual", "pending"}
@@ -1116,7 +1145,9 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 and hasattr(self.client, "device_topology")
                 and (
                     force_topology
-                    or not _is_recent(self._topology_updated_at, _TOPOLOGY_IDLE_INTERVAL)
+                    or not _is_recent(
+                        self._topology_updated_at, _TOPOLOGY_IDLE_INTERVAL
+                    )
                 )
             )
             if should_poll_topology:

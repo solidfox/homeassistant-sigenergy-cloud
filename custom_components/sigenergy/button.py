@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable  # noqa: TC003
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.exceptions import HomeAssistantError
@@ -33,19 +34,13 @@ async def async_setup_entry(
 
     if data.status_coordinator.module_enabled(MODULE_STATION_SETTINGS):
         entities.append(
-            SigenRestartAioButton(
-                data.status_coordinator, station_id, data.client
-            )
+            SigenRestartAioButton(data.status_coordinator, station_id, data.client)
         )
         entities.append(
-            SigenToggleAioPowerButton(
-                data.status_coordinator, station_id, data.client
-            )
+            SigenToggleAioPowerButton(data.status_coordinator, station_id, data.client)
         )
         entities.append(
-            SigenRefreshDeviceStatusButton(
-                data.status_coordinator, station_id
-            )
+            SigenRefreshDeviceStatusButton(data.status_coordinator, station_id)
         )
 
     if data.status_coordinator.module_enabled(MODULE_EVDC):
@@ -203,7 +198,7 @@ class SigenRestartAioButton(SigenStatusEntity, ButtonEntity):
                 wait_evdc_offline=True,
                 evdc_offline_wait_s=120.0,
             )
-        except Exception as err:  # noqa: BLE001 - surface cloud failures in UI
+        except Exception as err:
             raise HomeAssistantError(f"Sigen AIO restart failed: {err}") from err
         if not result.get("powered_on"):
             raise HomeAssistantError(
@@ -231,7 +226,10 @@ class SigenRestartAioButton(SigenStatusEntity, ButtonEntity):
         settings = None
         for ent in hass.config_entries.async_entries(DOMAIN):
             runtime = getattr(ent, "runtime_data", None)
-            if runtime is not None and getattr(runtime, "status_coordinator", None) is status:
+            if (
+                runtime is not None
+                and getattr(runtime, "status_coordinator", None) is status
+            ):
                 settings = getattr(runtime, "settings_coordinator", None)
                 break
 
@@ -292,7 +290,7 @@ class SigenToggleAioPowerButton(SigenStatusEntity, ButtonEntity):
         )
         try:
             await self._client.toggle_aio_power()
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             raise HomeAssistantError(f"Sigen AIO power toggle failed: {err}") from err
         await self.coordinator.async_request_device_status_poll(
             source="aio_power_toggle",

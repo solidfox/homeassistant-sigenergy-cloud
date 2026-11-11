@@ -105,6 +105,30 @@
       "battery_capacity": {
         "name": "Battery Capacity"
       },
+      "export_limit_installer_max": {
+        "name": "Grid Export Limit Installer Max"
+      },
+      "import_limit_installer_max": {
+        "name": "Grid Import Limit Installer Max"
+      },
+      "grid_connection_limit_installer_max": {
+        "name": "Grid Connection Current Installer Max"
+      },
+      "grid_connection_limit_effective": {
+        "name": "Grid Connection Current Effective"
+      },
+      "battery_max_charge_power": {
+        "name": "Battery Max Charge Power Limit"
+      },
+      "battery_max_discharge_power": {
+        "name": "Battery Max Discharge Power Limit"
+      },
+      "solar_power_limit": {
+        "name": "Solar Power Limit"
+      },
+      "backup_reserve": {
+        "name": "Backup Reserve"
+      },
       "solar_power_forecast": {
         "name": "Solar Power Forecast"
       },
@@ -240,6 +264,9 @@
       "import_limit": {
         "name": "Grid Import Limit"
       },
+      "grid_connection_limit": {
+        "name": "Grid Connection Current Limit"
+      },
       "battery_charge_soc": {
         "name": "Battery Charge Limit"
       },
@@ -280,6 +307,9 @@
       },
       "import_limit_enabled": {
         "name": "Grid Import Limit"
+      },
+      "grid_connection_limit_enabled": {
+        "name": "Grid Connection Current Limit"
       },
       "battery_export_enabled": {
         "name": "Block Battery Export to Grid"
