@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import sys
 import types
 import unittest
-import importlib.util
 from pathlib import Path
 
 
@@ -235,8 +235,12 @@ class SettingsCoordinatorTest(unittest.TestCase):
 
         data = asyncio.run(settings._async_update_data())
 
-        self.assertEqual(data["grid_connection_limit"]["installerSetLimitation"], "13.8")
-        self.assertEqual(data["battery_power_limit"]["batteryMaxChargingPower"], "4294967.295")
+        self.assertEqual(
+            data["grid_connection_limit"]["installerSetLimitation"], "13.8"
+        )
+        self.assertEqual(
+            data["battery_power_limit"]["batteryMaxChargingPower"], "4294967.295"
+        )
         self.assertEqual(data["solar_power_limit"]["powerLimit"], "4294967.295")
         self.assertEqual(data["backup_reserve"]["backupReserve"], 3)
 

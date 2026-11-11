@@ -55,7 +55,8 @@ def build_buy_tax_and_fee(
     grid_fee_name: str = "Ellevio grid fee",
     markup_name: str = "Supplier markup",
 ) -> dict[str, Any]:
-    """Build buy tax/fee so gross ≈ (spot + fees) × (1 + VAT/100).
+    """
+    Build buy tax/fee so gross ≈ (spot + fees) × (1 + VAT/100).
 
     All fees use applyTax=true so VAT multiplies spot and adders together,
     matching the Swedish consumer buy formula used in Almis HA.
@@ -77,7 +78,8 @@ def build_sell_tax_and_fee(
     tax_subsidy_sek: float = 0.0,
     fee_name: str = "Ellevio production compensation",
 ) -> dict[str, Any]:
-    """Build sell tax/fee: spot + grid compensation (+ optional tax subsidy).
+    """
+    Build sell tax/fee: spot + grid compensation (+ optional tax subsidy).
 
     Ellevio Stockholm microproduction high-load window is modeled as
     Nov–Mar Mon–Fri 06:00–22:00 at ``grid_comp_high_sek``; all other times
