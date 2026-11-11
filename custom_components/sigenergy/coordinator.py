@@ -14,7 +14,13 @@ from sigenergy_cloud import (
     SigenergyCloudRateLimitError,
 )
 
-from .const import DOMAIN, LOGGER
+from .const import (
+    DOMAIN,
+    LOGGER,
+    MODULE_EVDC,
+    MODULE_FORECAST,
+    MODULE_STATION_SETTINGS,
+)
 
 _SETTINGS_INTERVAL = timedelta(minutes=15)
 _STATUS_NORMAL_INTERVAL = timedelta(minutes=2)
@@ -25,9 +31,12 @@ _DC_PLUG_STATUS_IDLE_INTERVAL = timedelta(minutes=10)
 _DC_REALTIME_IDLE_INTERVAL = timedelta(minutes=10)
 _DC_STATUS_IDLE_INTERVAL = timedelta(minutes=10)
 _DC_V2X_IDLE_INTERVAL = timedelta(minutes=10)
+_TOPOLOGY_IDLE_INTERVAL = timedelta(minutes=2)
 _DC_SLOW_INTERVAL = timedelta(hours=1)
 _DC_RARE_INTERVAL = timedelta(hours=6)
 _ACTIVE_ALARMS_INTERVAL = timedelta(minutes=30)
+# After AIO power change, burst-poll topology deviceStatus longer than normal.
+_AIO_POWER_FAST_POLL_S = 180.0
 _RATE_LIMIT_BACKOFF_UNTIL = 0.0
 _DC_STATUS_CARRY_FORWARD_KEYS = (
     "plugged_in",
@@ -44,10 +53,14 @@ _DC_STATUS_CARRY_FORWARD_KEYS = (
     "current_session_started_at",
     "session_energy_charged",
     "lifetime_energy_dispensed",
+    "topology_device_status",
+    "topology_communicate_status",
+    "topology_offline",
+    "topology_node_found",
 )
 
 
-class _RateLimitBackoff(Exception):
+class _RateLimitBackoff(Exception):  # noqa: N818
     """Raised internally to abort an update after the cloud rate-limits us."""
 
 
@@ -69,6 +82,7 @@ def _activate_rate_limit_backoff(label: str, exc: Exception) -> None:
             _RATE_LIMIT_BACKOFF_INTERVAL.total_seconds() / 60,
             exc,
         )
+
 
 _DCEVSE_STATUS_LABELS = {
     1: "Ready",
@@ -92,8 +106,105 @@ def _float_or_none(value: Any) -> float | None:
     """Return value as float, or None when the API value is missing/non-numeric."""
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
+
+
+def _plug_status_is_plugged_in(value: Any) -> bool | None:
+    """Return normalized plug status from known cloud payload shapes."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("_", " ")
+        if normalized in {"1", "true", "on", "yes", "plugged in", "connected"}:
+            return True
+        if normalized in {"0", "false", "off", "no", "unplugged", "disconnected"}:
+            return False
+    try:
+        return bool(int(value))
+    except TypeError, ValueError:
+        return bool(value)
+
+
+def _int_or_none(value: Any) -> int | None:
+    """Return value as int, or None when the API value is missing/non-numeric."""
+    try:
+        return int(value)
+    except TypeError, ValueError:
+        return None
+
+
+def _normalized_status_text(value: Any) -> str | None:
+    """Return a normalized status string from known cloud payload shapes."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        for key in ("statusDesc", "statusName", "status", "label", "state"):
+            text = _normalized_status_text(value.get(key))
+            if text:
+                return text
+        return None
+    if isinstance(value, str):
+        return " ".join(value.strip().lower().replace("_", " ").split())
+    return None
+
+
+def _secc_run_state_is_start_ready(value: Any) -> bool | None:
+    """Return whether a SECC run state is safe for a new EVDC start command."""
+    int_value = _int_or_none(value)
+    if int_value is not None:
+        return int_value == 1
+
+    normalized = _normalized_status_text(value)
+    if normalized in {"idle", "ready", "plugged in", "connected"}:
+        return True
+    if normalized:
+        return False
+    return None
+
+
+def _dc_charger_status_is_start_ready(value: Any) -> bool | None:  # noqa: PLR0911
+    """Return whether charger status represents the app's ready/plugged-in state."""
+    if isinstance(value, dict):
+        for key in ("statusDesc", "statusName", "status", "label", "state"):
+            if key not in value:
+                continue
+            ready = _dc_charger_status_is_start_ready(value.get(key))
+            if ready is not None:
+                return ready
+        return None
+
+    int_value = _int_or_none(value)
+    if int_value is not None:
+        return int_value == 1
+
+    normalized = _normalized_status_text(value)
+    if normalized is None:
+        return None
+
+    if normalized in {"idle", "ready", "plugged in", "connected"}:
+        return True
+
+    if normalized.startswith("secc state"):
+        return False
+
+    not_ready_tokens = (
+        "alarm",
+        "charging",
+        "discharging",
+        "error",
+        "establishing",
+        "fail",
+        "fault",
+        "insulation",
+        "preparing",
+    )
+    if any(token in normalized for token in not_ready_tokens):
+        return False
+
+    return None
 
 
 def _is_recent(updated_at: float | None, interval: timedelta) -> bool:
@@ -172,7 +283,13 @@ if TYPE_CHECKING:
 class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Polls device settings at a conservative cadence."""
 
-    def __init__(self, hass: HomeAssistant, client: SigenergyCloudClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: SigenergyCloudClient,
+        *,
+        enabled_modules: set[str],
+    ) -> None:
         super().__init__(
             hass,
             LOGGER,
@@ -180,6 +297,7 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=_SETTINGS_INTERVAL,
         )
         self.client = client
+        self._enabled_modules = enabled_modules
         # Maps mode label → (mode_int, profile_id); -1 = no custom profile
         self.available_modes: dict[str, tuple[int, int]] = {}
         # Persists V2X params across setting refreshes; set by the number entities
@@ -194,10 +312,16 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def dc_sns(self) -> list[str]:
         """Return known DC charger serial numbers."""
+        if not self.module_enabled(MODULE_EVDC):
+            return []
         return list(
             getattr(self.client, "dc_sns", None)
             or ([self.client.dc_sn] if self.client.dc_sn else [])
         )
+
+    def module_enabled(self, module: str) -> bool:
+        """Return true when a cloud fetch module is enabled."""
+        return module in self._enabled_modules
 
     def get_v2x_power_cap(self, dc_sn: str) -> float | None:
         """Return the pending V2X power cap for a DC charger."""
@@ -238,6 +362,9 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _prediction_data(self, safe) -> dict[str, Any] | None:
         """Return cached AI prediction data, refreshing it at a slower cadence."""
+        if not self.module_enabled(MODULE_FORECAST):
+            return None
+
         now = datetime.now(UTC)
         if (
             self._prediction_data_cache is not None
@@ -302,7 +429,10 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return (self.data or {}).get(label) if self.data else None
 
         try:
-            if not self.available_modes:
+            station_settings_enabled = self.module_enabled(MODULE_STATION_SETTINGS)
+            forecast_enabled = self.module_enabled(MODULE_FORECAST)
+
+            if station_settings_enabled and not self.available_modes:
                 try:
                     modes_data = await self.client.available_operational_modes()
                     for m in modes_data.get("defaultWorkingModes", []):
@@ -322,46 +452,103 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
             data: dict[str, Any] = {
-                "operational_mode": await safe(
-                    self.client.current_operational_mode(), "operational_mode"
-                ),
-                "battery_level": await safe(
-                    self.client.battery_levels(), "battery_level"
-                ),
-                "export_limit": await safe(
-                    self.client.grid_export_limit(), "export_limit"
-                ),
-                "import_limit": await safe(
-                    self.client.grid_import_limit(), "import_limit"
-                ),
-                "battery_export": await safe(
-                    self.client.battery_export_limitation(), "battery_export"
-                ),
-                "prediction_data": await self._prediction_data(safe),
-                "prediction_data_fetched_at": (
-                    self._prediction_data_updated_at.isoformat()
-                    if self._prediction_data_updated_at is not None
-                    else None
-                ),
-                "prediction_data_refresh_interval_minutes": int(
-                    _PREDICTION_DATA_INTERVAL.total_seconds() // 60
-                ),
-                "peak_shaving": await safe(
-                    self.client.peak_shaving_schedule(), "peak_shaving"
-                ),
-                "instant_manual": await safe(
-                    self.client.instant_manual_control(), "instant_manual"
-                ),
-                "instant_manual_display": await safe(
-                    self.client.instant_manual_display(),
-                    "instant_manual_display",
-                    (self.data or {}).get("instant_manual_display"),
-                ),
                 "dc_charge_soc_range": None,
                 "dc_charge_mode": None,
                 "dc_charge_setting": None,
                 "dc_chargers": {},
             }
+
+            if station_settings_enabled:
+                station_home = await self._cached_data(
+                    safe,
+                    "station_home",
+                    self.client.refresh_station,
+                    _DC_RARE_INTERVAL,
+                    (self.data or {}).get("station_home"),
+                )
+                instant_manual = await safe(
+                    self.client.instant_manual_control(), "instant_manual"
+                )
+                instant_manual_display = (self.data or {}).get("instant_manual_display")
+                if getattr(instant_manual, "enabled", False):
+                    instant_manual_display = await safe(
+                        self.client.instant_manual_display(),
+                        "instant_manual_display",
+                        instant_manual_display,
+                    )
+                data.update(
+                    {
+                        "station_home": station_home,
+                        "battery_capacity": (
+                            station_home.get("batteryCapacity")
+                            if isinstance(station_home, dict)
+                            else None
+                        ),
+                        "operational_mode": await safe(
+                            self.client.current_operational_mode(),
+                            "operational_mode",
+                        ),
+                        "battery_level": await safe(
+                            self.client.battery_levels(), "battery_level"
+                        ),
+                        "export_limit": await safe(
+                            self.client.grid_export_limit(), "export_limit"
+                        ),
+                        "import_limit": await safe(
+                            self.client.grid_import_limit(), "import_limit"
+                        ),
+                        "battery_export": await safe(
+                            self.client.battery_export_limitation(), "battery_export"
+                        ),
+                        # "Max Grid Connection Current" in the app; owner may lower
+                        # below installerSetLimitation. Polled every cycle like the
+                        # import/export limits so writes are confirmed promptly.
+                        "grid_connection_limit": await safe(
+                            self.client.grid_connection_limit(),
+                            "grid_connection_limit",
+                        ),
+                        # Read-only ceilings that change rarely; refresh hourly.
+                        "battery_power_limit": await self._cached_data(
+                            safe,
+                            "battery_power_limit",
+                            self.client.battery_power_limit,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "solar_power_limit": await self._cached_data(
+                            safe,
+                            "solar_power_limit",
+                            self.client.solar_power_limit,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "backup_reserve": await self._cached_data(
+                            safe,
+                            "backup_reserve",
+                            self.client.backup_reserve,
+                            _DC_SLOW_INTERVAL,
+                        ),
+                        "peak_shaving": await safe(
+                            self.client.peak_shaving_schedule(), "peak_shaving"
+                        ),
+                        "instant_manual": instant_manual,
+                        "instant_manual_display": instant_manual_display,
+                    }
+                )
+
+            if forecast_enabled:
+                data.update(
+                    {
+                        "prediction_data": await self._prediction_data(safe),
+                        "prediction_data_fetched_at": (
+                            self._prediction_data_updated_at.isoformat()
+                            if self._prediction_data_updated_at is not None
+                            else None
+                        ),
+                        "prediction_data_refresh_interval_minutes": int(
+                            _PREDICTION_DATA_INTERVAL.total_seconds() // 60
+                        ),
+                    }
+                )
+
             dc_chargers: dict[str, dict[str, Any]] = {}
             dc_sns = self.dc_sns()
             if dc_sns:
@@ -422,24 +609,25 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
                 dc_chargers[dc_sn] = dc_data
 
-            active_alarms_payload = await self._cached_data(
-                safe,
-                "active_alarms",
-                lambda: self.client.active_alarms(page=1, page_size=10),
-                _ACTIVE_ALARMS_INTERVAL,
-            )
-            alarms_by_sn: dict[str, list[dict[str, Any]]] = {}
-            records = (active_alarms_payload or {}).get("records") or []
-            for record in records:
-                sn = record.get("deviceSnCode") or record.get("rawDeviceSnCode")
-                if not sn:
-                    continue
-                alarms_by_sn.setdefault(sn, []).append(record)
-            for dc_sn in dc_sns:
-                dc_chargers[dc_sn]["active_alarms"] = alarms_by_sn.get(dc_sn, [])
+            if dc_sns:
+                active_alarms_payload = await self._cached_data(
+                    safe,
+                    "active_alarms",
+                    lambda: self.client.active_alarms(page=1, page_size=10),
+                    _ACTIVE_ALARMS_INTERVAL,
+                )
+                alarms_by_sn: dict[str, list[dict[str, Any]]] = {}
+                records = (active_alarms_payload or {}).get("records") or []
+                for record in records:
+                    sn = record.get("deviceSnCode") or record.get("rawDeviceSnCode")
+                    if not sn:
+                        continue
+                    alarms_by_sn.setdefault(sn, []).append(record)
+                for dc_sn in dc_sns:
+                    dc_chargers[dc_sn]["active_alarms"] = alarms_by_sn.get(dc_sn, [])
+                data["active_alarms"] = active_alarms_payload
 
             data["dc_chargers"] = dc_chargers
-            data["active_alarms"] = active_alarms_payload
             if self.client.dc_sn and self.client.dc_sn in dc_chargers:
                 data["dc_charge_mode"] = dc_chargers[self.client.dc_sn]["charge_mode"]
                 data["dc_charge_setting"] = dc_chargers[self.client.dc_sn][
@@ -465,7 +653,13 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     pending command is visible.
     """
 
-    def __init__(self, hass: HomeAssistant, client: SigenergyCloudClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: SigenergyCloudClient,
+        *,
+        enabled_modules: set[str],
+    ) -> None:
         super().__init__(
             hass,
             LOGGER,
@@ -473,18 +667,29 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=_STATUS_NORMAL_INTERVAL,
         )
         self.client = client
+        self._enabled_modules = enabled_modules
         self._fast_poll_sources: set[str] = set()
         self._plug_status_updated_at: dict[str, float] = {}
         self._dc_realtime_updated_at: dict[str, float] = {}
         self._dc_status_updated_at: dict[str, float] = {}
         self._dc_v2x_updated_at: dict[str, float] = {}
+        self._topology_updated_at: float | None = None
+        self._force_topology_once = False
+        self._force_dc_endpoints_once = False
+        self._fast_poll_clear_handles: dict[str, Any] = {}
 
     def dc_sns(self) -> list[str]:
         """Return known DC charger serial numbers."""
+        if not self.module_enabled(MODULE_EVDC):
+            return []
         return list(
             getattr(self.client, "dc_sns", None)
             or ([self.client.dc_sn] if self.client.dc_sn else [])
         )
+
+    def module_enabled(self, module: str) -> bool:
+        """Return true when a cloud fetch module is enabled."""
+        return module in self._enabled_modules
 
     def set_fast_polling(self, source: str, enabled: bool) -> None:
         """Temporarily increase polling while a charger command is pending."""
@@ -492,11 +697,59 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._fast_poll_sources.add(source)
         else:
             self._fast_poll_sources.discard(source)
+            handle = self._fast_poll_clear_handles.pop(source, None)
+            if handle is not None:
+                handle.cancel()
         self.update_interval = (
             _STATUS_FAST_INTERVAL
             if self._fast_poll_sources
             else _STATUS_NORMAL_INTERVAL
         )
+
+    def request_force_device_status_poll(self) -> None:
+        """Force topology + EVDC status endpoints on the next coordinator update."""
+        self._force_topology_once = True
+        self._force_dc_endpoints_once = True
+        self._topology_updated_at = None
+        self._plug_status_updated_at.clear()
+        self._dc_realtime_updated_at.clear()
+        self._dc_status_updated_at.clear()
+        self._dc_v2x_updated_at.clear()
+
+    def start_aio_power_fast_poll(
+        self, source: str = "aio_power", duration_s: float = _AIO_POWER_FAST_POLL_S
+    ) -> None:
+        """Aggressively poll topology deviceStatus after AIO power is changed."""
+        self.request_force_device_status_poll()
+        self.set_fast_polling(source, True)
+        previous = self._fast_poll_clear_handles.pop(source, None)
+        if previous is not None:
+            previous.cancel()
+
+        def _clear(_now: Any = None) -> None:
+            self.set_fast_polling(source, False)
+            self._fast_poll_clear_handles.pop(source, None)
+
+        try:  # noqa: SIM105
+            self._fast_poll_clear_handles[source] = self.hass.loop.call_later(
+                max(float(duration_s), 0.0), _clear
+            )
+        except Exception:  # noqa: BLE001, S110 - coordinator may run under stubs
+            pass
+
+    async def async_request_device_status_poll(
+        self,
+        *,
+        source: str = "manual_poll",
+        duration_s: float = _AIO_POWER_FAST_POLL_S,
+        enable_fast_poll: bool = True,
+    ) -> None:
+        """Manual/automation trigger: force topology+EVDC status and refresh now."""
+        if enable_fast_poll:
+            self.start_aio_power_fast_poll(source=source, duration_s=duration_s)
+        else:
+            self.request_force_device_status_poll()
+        await self.async_request_refresh()
 
     def _should_refresh(
         self,
@@ -511,6 +764,52 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @staticmethod
     def _mark_refreshed(updated_by_sn: dict[str, float], dc_sn: str) -> None:
         updated_by_sn[dc_sn] = time.monotonic()
+
+    def _apply_topology_to_dc_data(
+        self,
+        topology: dict[str, Any] | None,
+        dc_chargers: dict[str, dict[str, Any]],
+        last: dict[str, Any],
+    ) -> None:
+        """Map topology EVDC nodes onto per-charger status fields."""
+        if not topology or not hasattr(self.client, "iter_topology_nodes"):
+            return
+        try:
+            nodes = self.client.iter_topology_nodes(topology)
+        except Exception:  # noqa: BLE001
+            return
+        by_sn: dict[str, dict[str, Any]] = {}
+        type_dc = getattr(self.client, "TOPO_DEVICE_TYPE_DC_CHARGER", 5)
+        for node in nodes:
+            if node.get("deviceType") != type_dc:
+                continue
+            sn = str(node.get("snCode") or node.get("showSnCode") or "").strip()
+            if sn:
+                by_sn[sn] = node
+        is_offline = getattr(self.client, "topology_node_is_offline", None)
+        for dc_sn, dc_data in dc_chargers.items():
+            last_dc = (last.get("dc_chargers") or {}).get(dc_sn, {})
+            node = by_sn.get(dc_sn)
+            if node is None and len(by_sn) == 1:
+                node = next(iter(by_sn.values()))
+            if node is None:
+                dc_data.setdefault(
+                    "topology_device_status", last_dc.get("topology_device_status")
+                )
+                dc_data.setdefault(
+                    "topology_communicate_status",
+                    last_dc.get("topology_communicate_status"),
+                )
+                dc_data.setdefault("topology_offline", last_dc.get("topology_offline"))
+                dc_data.setdefault(
+                    "topology_node_found", last_dc.get("topology_node_found", False)
+                )
+                continue
+            offline = is_offline(node) if callable(is_offline) else None
+            dc_data["topology_device_status"] = node.get("deviceStatus")
+            dc_data["topology_communicate_status"] = node.get("communicateStatus")
+            dc_data["topology_offline"] = offline
+            dc_data["topology_node_found"] = True
 
     async def _async_update_data(self) -> dict[str, Any]:
         if _rate_limit_backoff_remaining():
@@ -551,15 +850,19 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             dc_sns = self.dc_sns()
             station_is_charging: bool | None = None
             fast_polling = bool(self._fast_poll_sources)
+            force_topology = self._force_topology_once or fast_polling
+            force_dc_endpoints = self._force_dc_endpoints_once or fast_polling
+            self._force_topology_once = False
+            self._force_dc_endpoints_once = False
             ev_power = _float_or_none(data.get("ev_power"))
             dc_last_values = (last.get("dc_chargers") or {}).values()
             v2x_statuses = {"manual", "pending", "bidirectional"}
             station_activity_hint = (
                 fast_polling
+                or force_dc_endpoints
                 or (ev_power is not None and abs(ev_power) > 0.05)
                 or any(
-                    bool(dc.get("is_charging"))
-                    or dc.get("v2x_status") in v2x_statuses
+                    bool(dc.get("is_charging")) or dc.get("v2x_status") in v2x_statuses
                     for dc in dc_last_values
                 )
             )
@@ -584,7 +887,8 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     single_dc=len(dc_sns) == 1,
                 )
                 dc_active = (
-                    fast_polling
+                    force_dc_endpoints
+                    or fast_polling
                     or (ev_power is not None and abs(ev_power) > 0.05)
                     or bool(last_dc.get("is_charging"))
                     or last_dc.get("v2x_status") in v2x_statuses
@@ -600,8 +904,9 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     try:
                         plug_status = await self.client.dc_plug_status(dc_sn=dc_sn)
                         self._mark_refreshed(self._plug_status_updated_at, dc_sn)
-                        if plug_status is not None:
-                            dc_data["plugged_in"] = bool(plug_status)
+                        plugged_in = _plug_status_is_plugged_in(plug_status)
+                        if plugged_in is not None:
+                            dc_data["plugged_in"] = plugged_in
                     except SigenergyCloudAuthError:
                         raise
                     except SigenergyCloudRateLimitError as exc:
@@ -628,27 +933,28 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         dc_data["ev_soc"] = charge_realtime.get(
                             "vehicleSoc", last_dc.get("ev_soc")
                         )
-                        secc_run_state = charge_realtime.get("seccRunState")
+                        raw_secc_run_state = charge_realtime.get("seccRunState")
+                        secc_run_state = (
+                            int(raw_secc_run_state)
+                            if raw_secc_run_state is not None
+                            else None
+                        )
                         if secc_run_state is not None:
-                            dc_data["secc_run_state"] = int(secc_run_state)
+                            dc_data["secc_run_state"] = secc_run_state
                             dc_data["dc_charger_status"] = _SECC_RUN_STATE_LABELS.get(
-                                int(secc_run_state), f"SECC state {int(secc_run_state)}"
+                                secc_run_state, f"SECC state {secc_run_state}"
                             )
                         dc_data["dc_charge_power"] = (
                             _signed_dc_charge_power(
                                 charge_realtime.get("pileOutputPower"),
-                                secc_run_state=(
-                                    int(secc_run_state)
-                                    if secc_run_state is not None
-                                    else None
-                                ),
+                                secc_run_state=secc_run_state,
                             )
                             if "pileOutputPower" in charge_realtime
                             else last_dc.get("dc_charge_power")
                         )
                         if (
                             secc_run_state is not None
-                            and int(secc_run_state) == 8
+                            and secc_run_state == 8
                             and dc_data.get("v2x_status") not in {"manual", "pending"}
                         ):
                             dc_data["v2x_status"] = "bidirectional"
@@ -665,7 +971,10 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             dc_data["plugged_in"] = True
                         if output_power > 0.05 or output_current > 0.1:
                             dc_data["is_charging"] = True
-                        elif station_is_charging is False:
+                        elif station_is_charging is False or secc_run_state in (
+                            None,
+                            1,
+                        ):
                             dc_data["is_charging"] = False
                         dc_data["session_energy_charged"] = _float_or_none(
                             charge_realtime.get("singleChargePower")
@@ -713,6 +1022,8 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 )
                             if status_code == 3:
                                 dc_data["is_charging"] = True
+                            elif status_code in {1, 2}:
+                                dc_data["is_charging"] = False
                     except SigenergyCloudAuthError:
                         raise
                     except SigenergyCloudRateLimitError as exc:
@@ -727,7 +1038,10 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 if not dc_data.get("is_charging"):
                     dc_data["current_session_started_at"] = None
-                elif current_session_start_ts is not None and current_session_start_ts > 0:
+                elif (
+                    current_session_start_ts is not None
+                    and current_session_start_ts > 0
+                ):
                     dc_data["current_session_started_at"] = int(
                         current_session_start_ts
                     )
@@ -736,12 +1050,10 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._dc_v2x_updated_at,
                     dc_sn,
                     _DC_V2X_IDLE_INTERVAL,
-                    force=fast_polling or v2x_active,
+                    force=force_dc_endpoints or fast_polling or v2x_active,
                 ):
                     try:
-                        settings = await self.client.v2x_discharge_settings(
-                            dc_sn=dc_sn
-                        )
+                        settings = await self.client.v2x_discharge_settings(dc_sn=dc_sn)
                         info = await self.client.v2x_discharge_info(dc_sn=dc_sn)
                         realtime = await self.client.dc_discharge_realtime(dc_sn=dc_sn)
                         self._mark_refreshed(self._dc_v2x_updated_at, dc_sn)
@@ -798,9 +1110,11 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         elif discharging:
                             # AI/bidirectional mode — no user-started timed session
                             dc_data["v2x_status"] = "bidirectional"
-                        elif dc_data.get("dc_charger_status") == "Discharging" or (
-                            _float_or_none(dc_data.get("dc_charge_power")) or 0.0
-                        ) < -0.05:
+                        elif (
+                            dc_data.get("dc_charger_status") == "Discharging"
+                            or (_float_or_none(dc_data.get("dc_charge_power")) or 0.0)
+                            < -0.05
+                        ):
                             dc_data["v2x_status"] = (
                                 dc_data["v2x_status"]
                                 if dc_data.get("v2x_status") in {"manual", "pending"}
@@ -822,6 +1136,49 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 dc_chargers[dc_sn] = dc_data
 
+            # Topology deviceStatus is the mySigen offline truth for EVDC during
+            # AIO power-cycle; poll on idle interval, force when AIO power changes.
+            topology_payload = last.get("topology")
+            should_poll_topology = (
+                self.module_enabled(MODULE_EVDC)
+                and dc_sns
+                and hasattr(self.client, "device_topology")
+                and (
+                    force_topology
+                    or not _is_recent(
+                        self._topology_updated_at, _TOPOLOGY_IDLE_INTERVAL
+                    )
+                )
+            )
+            if should_poll_topology:
+                try:
+                    topology_payload = await self.client.device_topology()
+                    self._topology_updated_at = time.monotonic()
+                except SigenergyCloudAuthError:
+                    raise
+                except SigenergyCloudRateLimitError as exc:
+                    _activate_rate_limit_backoff("Sigen status: topology", exc)
+                    raise _RateLimitBackoff from exc
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.warning("Sigen status: topology failed: %s", exc)
+                    topology_payload = last.get("topology")
+            if isinstance(topology_payload, dict):
+                data["topology"] = topology_payload
+                data["topology_station_status"] = topology_payload.get("stationStatus")
+                self._apply_topology_to_dc_data(topology_payload, dc_chargers, last)
+            else:
+                data["topology"] = last.get("topology")
+                data["topology_station_status"] = last.get("topology_station_status")
+                for dc_sn, dc_data in dc_chargers.items():
+                    last_dc = (last.get("dc_chargers") or {}).get(dc_sn, {})
+                    for key in (
+                        "topology_device_status",
+                        "topology_communicate_status",
+                        "topology_offline",
+                        "topology_node_found",
+                    ):
+                        dc_data.setdefault(key, last_dc.get(key))
+
             data["dc_chargers"] = dc_chargers
             if self.client.dc_sn and self.client.dc_sn in dc_chargers:
                 first_dc = dc_chargers[self.client.dc_sn]
@@ -832,6 +1189,11 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["secc_run_state"] = first_dc.get("secc_run_state")
                 data["dc_charger_status"] = first_dc.get("dc_charger_status")
                 data["v2x_status"] = first_dc.get("v2x_status")
+                data["topology_device_status"] = first_dc.get("topology_device_status")
+                data["topology_communicate_status"] = first_dc.get(
+                    "topology_communicate_status"
+                )
+                data["topology_offline"] = first_dc.get("topology_offline")
 
             return data
         except _RateLimitBackoff as exc:

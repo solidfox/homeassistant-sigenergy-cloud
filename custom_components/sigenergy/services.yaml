@@ -53,3 +53,119 @@ disable_instant_manual_control:
         text:
       name: Config Entry ID
       description: Optional target config entry when multiple Sigenergy stations are configured.
+
+refresh_device_status:
+  name: Refresh Device Status
+  description: >
+    Force an immediate poll of mySigen topology deviceStatus/communicateStatus
+    and EVDC status endpoints. Use after AIO power changes or from automations
+    that need fresher offline/alarm state than the normal 2-minute poll.
+  fields:
+    duration_seconds:
+      required: false
+      default: 180
+      selector:
+        number:
+          min: 0
+          max: 600
+          step: 15
+          mode: box
+          unit_of_measurement: s
+      name: Fast-poll duration
+      description: >
+        How long to keep 15s fast polling after the forced refresh.
+        Set 0 for a single forced poll only.
+    entry_id:
+      required: false
+      selector:
+        text:
+      name: Config Entry ID
+      description: Optional target config entry when multiple Sigenergy stations are configured.
+
+sync_nordpool_tax_and_fees:
+  name: Sync Nord Pool tax and fees
+  description: >
+    Push buy/sell tax and fee adders into Sigenergy AI for a Nord Pool dynamic
+    tariff. Fee amounts are in SEK/kWh excluding VAT; VAT is applied via the
+    buy fixed tax rate. Sell grid compensation is written as a seasonal TOU
+    schedule (high-load Nov–Mar weekdays 06–22).
+  fields:
+    vat_percent:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          mode: box
+          unit_of_measurement: "%"
+      name: VAT percent
+      description: Buy-side VAT percentage (Sweden typically 25).
+    energy_tax_sek:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: SEK/kWh
+      name: Energy tax (ex VAT)
+    grid_fee_sek:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: SEK/kWh
+      name: Grid transfer fee (ex VAT)
+    markup_sek:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: SEK/kWh
+      name: Supplier markup (ex VAT)
+    sell_grid_comp_low_sek:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: SEK/kWh
+      name: Sell grid compensation (low load)
+    sell_grid_comp_high_sek:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: SEK/kWh
+      name: Sell grid compensation (high load)
+    sell_tax_subsidy_sek:
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: SEK/kWh
+      name: Sell tax subsidy
+      description: Optional production tax credit (skattereduktion). Leave 0 to omit.
+    entry_id:
+      required: false
+      selector:
+        text:
+      name: Config Entry ID
+      description: Optional target config entry when multiple Sigenergy stations are configured.

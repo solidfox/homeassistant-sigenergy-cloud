@@ -8,11 +8,13 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.exceptions import HomeAssistantError
 
+from .const import MODULE_EVDC, MODULE_STATION_SETTINGS
 from .entity import (
     SigenDCChargerSettingsEntity,
     SigenDCChargerStatusEntity,
     SigenSettingsEntity,
 )
+from .evdc_start_guard import EVDCStartReadyGate
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -34,32 +36,38 @@ async def async_setup_entry(
     data = entry.runtime_data
     station_id = data.client.station_id
 
-    entities: list[SwitchEntity] = [
-        SigenExportLimitSwitch(data.settings_coordinator, station_id),
-        SigenImportLimitSwitch(data.settings_coordinator, station_id),
-        SigenBatteryExportSwitch(data.settings_coordinator, station_id),
-    ]
-
-    for dc_sn in data.settings_coordinator.dc_sns():
-        entities.append(
-            SigenDCChargerBatteryBoostSwitch(
-                data.settings_coordinator,
-                station_id,
-                dc_sn,
-            )
+    entities: list[SwitchEntity] = []
+    if data.settings_coordinator.module_enabled(MODULE_STATION_SETTINGS):
+        entities.extend(
+            [
+                SigenExportLimitSwitch(data.settings_coordinator, station_id),
+                SigenImportLimitSwitch(data.settings_coordinator, station_id),
+                SigenGridConnectionLimitSwitch(data.settings_coordinator, station_id),
+                SigenBatteryExportSwitch(data.settings_coordinator, station_id),
+            ]
         )
 
-    for dc_sn in data.status_coordinator.dc_sns():
-        entities.append(
-            SigenDCChargerSwitch(
-                data.status_coordinator, station_id, dc_sn, data.client
+    if data.settings_coordinator.module_enabled(MODULE_EVDC):
+        for dc_sn in data.settings_coordinator.dc_sns():
+            entities.append(
+                SigenDCChargerBatteryBoostSwitch(
+                    data.settings_coordinator,
+                    station_id,
+                    dc_sn,
+                )
             )
-        )
-        entities.append(
-            SigenV2XDischargeSwitch(
-                data.status_coordinator, station_id, dc_sn, data.client
+
+        for dc_sn in data.status_coordinator.dc_sns():
+            entities.append(
+                SigenDCChargerSwitch(
+                    data.status_coordinator, station_id, dc_sn, data.client
+                )
             )
-        )
+            entities.append(
+                SigenV2XDischargeSwitch(
+                    data.status_coordinator, station_id, dc_sn, data.client
+                )
+            )
 
     async_add_entities(entities)
 
@@ -131,6 +139,45 @@ class SigenImportLimitSwitch(SigenSettingsEntity, SwitchEntity):
         self.coordinator.async_update_local_data(
             {"import_limit": {**current, "enable": False}}
         )
+
+
+class SigenGridConnectionLimitSwitch(SigenSettingsEntity, SwitchEntity):
+    """Enable/disable the max grid connection limit (parallel/off/grid)."""
+
+    _attr_translation_key = "grid_connection_limit_enabled"
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_icon = "mdi:transmission-tower"
+
+    def __init__(self, coordinator: SigenSettingsCoordinator, station_id: str) -> None:
+        super().__init__(coordinator, station_id, "grid_connection_limit_enabled")
+
+    @property
+    def is_on(self) -> bool | None:
+        if self.coordinator.data is None:
+            return None
+        return self.coordinator.data.get("grid_connection_limit", {}).get("enable")
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        current = self.coordinator.data.get("grid_connection_limit", {})
+        # Re-send the value the cloud currently applies so only `enable` changes.
+        limit_a = float(
+            current.get("ownerSetLimitation")
+            or current.get("currentLimitation")
+            or current.get("installerSetLimitation")
+            or 0
+        )
+        await self.coordinator.client.set_grid_connection_limit(
+            limit_a, enabled=enabled
+        )
+        self.coordinator.async_update_local_data(
+            {"grid_connection_limit": {**current, "enable": enabled}}
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set_enabled(False)
 
 
 class SigenBatteryExportSwitch(SigenSettingsEntity, SwitchEntity):
@@ -258,6 +305,7 @@ class SigenDCChargerSwitch(SigenDCChargerStatusEntity, SwitchEntity):
         self._pending_since: float | None = None
         self._pending_confirmations = 0
         self._pending_last_data_id: int | None = None
+        self._start_ready_gate = EVDCStartReadyGate(self, client, dc_sn)
 
     def _actual_is_on(self) -> bool | None:
         if self.coordinator.data is None:
@@ -328,20 +376,26 @@ class SigenDCChargerSwitch(SigenDCChargerStatusEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = self._start_ready_gate.attributes()
+
         pending_target = self._active_pending_target()
         if pending_target is None:
-            return {}
+            return attrs
         pending_for = 0
         if self._pending_since is not None:
             pending_for = int(time.monotonic() - self._pending_since)
-        return {
-            "pending": True,
-            "target_state": "on" if pending_target else "off",
-            "pending_for_seconds": pending_for,
-            "pending_confirmations": self._pending_confirmations,
-        }
+        attrs.update(
+            {
+                "pending": True,
+                "target_state": "on" if pending_target else "off",
+                "pending_for_seconds": pending_for,
+                "pending_confirmations": self._pending_confirmations,
+            }
+        )
+        return attrs
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._start_ready_gate.wait()
         response = await self._client.set_dc_charge_enabled(True, dc_sn=self._dc_sn)
         self._raise_if_rejected(response)
         self._set_pending(True)
@@ -372,6 +426,7 @@ class SigenV2XDischargeSwitch(SigenDCChargerStatusEntity, SwitchEntity):
     ) -> None:
         super().__init__(coordinator, station_id, dc_sn, "v2x_discharge_enabled")
         self._client = client
+        self._start_ready_gate = EVDCStartReadyGate(self, client, dc_sn)
 
     def _dc_data(self) -> dict[str, Any]:
         if self.coordinator.data is None:
@@ -386,7 +441,7 @@ class SigenV2XDischargeSwitch(SigenDCChargerStatusEntity, SwitchEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         dc_data = self._dc_data()
-        attrs: dict[str, Any] = {}
+        attrs = self._start_ready_gate.attributes()
         for attr, key in (
             ("has_car", "v2x_has_car"),
             ("has_disclaimer", "v2x_has_disclaimer"),
@@ -397,6 +452,7 @@ class SigenV2XDischargeSwitch(SigenDCChargerStatusEntity, SwitchEntity):
         return attrs
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._start_ready_gate.wait()
         await self._client.set_v2x_discharge_enabled(True, dc_sn=self._dc_sn)
         await self.coordinator.async_request_refresh()
 

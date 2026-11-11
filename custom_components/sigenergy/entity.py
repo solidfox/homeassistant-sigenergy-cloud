@@ -40,7 +40,7 @@ def _dc_charger_device_info(
 
 
 class SigenSettingsEntity(CoordinatorEntity[SigenSettingsCoordinator]):
-    """Entity tied to the 5-minute settings coordinator."""
+    """Entity tied to the conservative settings coordinator."""
 
     _attr_has_entity_name = True
 
@@ -58,7 +58,7 @@ class SigenSettingsEntity(CoordinatorEntity[SigenSettingsCoordinator]):
 
 
 class SigenStatusEntity(CoordinatorEntity[SigenStatusCoordinator]):
-    """Entity tied to the 30-second status coordinator."""
+    """Entity tied to the station status coordinator."""
 
     _attr_has_entity_name = True
 
