@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
@@ -20,7 +21,6 @@ from sigenergy_cloud import (
     SigenergyCloudClient,
     SigenergyCloudError,
 )
-import voluptuous as vol
 
 from .const import (
     CONF_REGION,
@@ -70,7 +70,9 @@ _INSTANT_MANUAL_MODE_ALIASES = {
 
 _SET_INSTANT_MANUAL_SCHEMA = vol.Schema(
     {
-        vol.Required("mode"): vol.All(str, vol.Lower, vol.In(_INSTANT_MANUAL_MODE_ALIASES)),
+        vol.Required("mode"): vol.All(
+            str, vol.Lower, vol.In(_INSTANT_MANUAL_MODE_ALIASES)
+        ),
         vol.Optional("duration_minutes", default=30): vol.All(
             vol.Coerce(int), vol.Range(min=30, max=120)
         ),
@@ -98,7 +100,9 @@ _REFRESH_DEVICE_STATUS_SCHEMA = vol.Schema(
 
 _SYNC_NORDPOOL_TAX_AND_FEES_SCHEMA = vol.Schema(
     {
-        vol.Required("vat_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+        vol.Required("vat_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
         vol.Required("energy_tax_sek"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Required("grid_fee_sek"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Required("markup_sek"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
@@ -304,7 +308,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def async_sync_nordpool_tax_and_fees(call) -> None:
         """Push Almis-style Nord Pool buy/sell tax+fee model into Sigen AI."""
-        from .elec_price import (
+        from .elec_price import (  # noqa: PLC0415
             DIRECTION_BUY,
             DIRECTION_SELL,
             build_buy_tax_and_fee,
@@ -332,7 +336,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             else:
                 # sigenergy-cloud < 0.1.7 fallback using transport helpers.
                 station_id = int(client.station_id)
-                await client._envelope(
+                await client._envelope(  # noqa: SLF001
                     "POST",
                     "electricity-price/api/tax-and-fee",
                     json={
@@ -341,7 +345,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                         "taxAndFee": buy_payload,
                     },
                 )
-                await client._envelope(
+                await client._envelope(  # noqa: SLF001
                     "POST",
                     "electricity-price/api/tax-and-fee",
                     json={
@@ -351,7 +355,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
                     },
                 )
         except SigenergyCloudError as exc:
-            raise HomeAssistantError(f"Failed to sync Sigenergy tax/fees: {exc}") from exc
+            raise HomeAssistantError(
+                f"Failed to sync Sigenergy tax/fees: {exc}"
+            ) from exc
 
     if not hass.services.has_service(DOMAIN, SERVICE_SET_INSTANT_MANUAL_CONTROL):
         hass.services.async_register(
@@ -383,7 +389,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         )
 
 
-def _service_config_entry(hass: HomeAssistant, entry_id: str | None) -> SigenConfigEntry:
+def _service_config_entry(
+    hass: HomeAssistant, entry_id: str | None
+) -> SigenConfigEntry:
     """Return the target config entry for a station-level service call."""
     if entry_id:
         entry = hass.config_entries.async_get_entry(entry_id)
@@ -397,5 +405,6 @@ def _service_config_entry(hass: HomeAssistant, entry_id: str | None) -> SigenCon
         if getattr(entry, "runtime_data", None) is not None
     ]
     if len(loaded_entries) != 1:
-        raise HomeAssistantError("Specify entry_id when multiple Sigenergy entries are loaded")
+        msg = "Specify entry_id when multiple Sigenergy entries are loaded"
+        raise HomeAssistantError(msg)
     return loaded_entries[0]

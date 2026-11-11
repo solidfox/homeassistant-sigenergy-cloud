@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -759,10 +760,7 @@ class SigenEnergyFlowSensor(SigenStatusEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        if (
-            self.entity_description.key != "pv_power"
-            or self.coordinator.data is None
-        ):
+        if self.entity_description.key != "pv_power" or self.coordinator.data is None:
             return None
         return {
             "description": (
@@ -906,7 +904,7 @@ def _next_prediction_value(points: list[tuple[datetime, float]]) -> float | None
 
 def _prediction_interval_hours(points: list[tuple[datetime, float]]) -> float:
     """Infer the forecast interval; HAR captures show 15-minute points."""
-    for previous, current in zip(points, points[1:], strict=False):
+    for previous, current in pairwise(points):
         delta = current[0] - previous[0]
         if delta > timedelta(0):
             return delta.total_seconds() / 3600
@@ -963,9 +961,7 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
         attrs: dict[str, Any] = {
             "description": self.entity_description.attribute_description,
             "source": "sigen_ai",
-            "source_endpoint": (
-                "prediction/predictData/get/predictData/{stationId}"
-            ),
+            "source_endpoint": ("prediction/predictData/get/predictData/{stationId}"),
             "updated_at": payload.get("nowTime"),
             "fetched_at": (coordinator_data or {}).get("prediction_data_fetched_at"),
             "refresh_interval_minutes": (coordinator_data or {}).get(
@@ -984,9 +980,7 @@ class SigenForecastCurveSensor(SigenSettingsEntity, SensorEntity):
             attrs["energy_remaining_today_kwh"] = _prediction_energy_kwh(
                 points, day_offset=0, future_only=True
             )
-            attrs["energy_tomorrow_kwh"] = _prediction_energy_kwh(
-                points, day_offset=1
-            )
+            attrs["energy_tomorrow_kwh"] = _prediction_energy_kwh(points, day_offset=1)
         return attrs
 
 
@@ -1007,7 +1001,9 @@ class SigenInstantManualControlSensor(SigenSettingsEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return _instant_manual_state((self.coordinator.data or {}).get("instant_manual"))
+        return _instant_manual_state(
+            (self.coordinator.data or {}).get("instant_manual")
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -1262,7 +1258,7 @@ def _float_value(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

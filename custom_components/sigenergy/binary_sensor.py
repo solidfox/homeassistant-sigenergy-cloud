@@ -80,7 +80,8 @@ class SigenDCChargerTopologyOnlineBinarySensor(
     SigenDCChargerStatusEntity,
     BinarySensorEntity,
 ):
-    """EVDC online state from mySigen topology deviceStatus/communicateStatus.
+    """
+    EVDC online state from mySigen topology deviceStatus/communicateStatus.
 
     This is the same view the app SigenStor detail panel uses. Prefer this over
     dcevse/status when deciding whether the EVDC has gone offline during an AIO

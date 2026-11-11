@@ -30,11 +30,25 @@ ignore = [
     "PLR0915", # Coordinator polling methods are intentionally grouped
     "PLR2004", # Protocol/status constants are close to their use
     "RUF001", # Existing user-facing strings may contain punctuation
+    "RUF002", # Docstrings use typographic punctuation (×, –) in formulas and ranges
+    "CPY001", # Project has no per-file copyright headers (LICENSE covers the repo)
     "RUF012", # Entity description class attributes are intentionally shared
     "TRY003", # Home Assistant errors often use direct messages
     "TRY300", # Existing try/except shape keeps auth/update failures local
     "COM812", # incompatible with formatter
     "ISC001", # incompatible with formatter
+]
+
+[lint.per-file-ignores]
+"tests/**" = [
+    "ARG005", # Stub lambdas mirror the signatures they replace
+    "D103", # Test functions are named for what they check
+    "INP001", # tests/ is not a package
+    "N818", # Test doubles mirror library exception names
+    "PT009", # Tests use unittest.TestCase assertions
+    "PT018", # Composite assertions keep related checks together
+    "S101", # assert is how pytest checks
+    "SLF001", # Tests inspect private coordinator state
 ]
 
 [lint.flake8-pytest-style]

@@ -107,7 +107,7 @@ sync_nordpool_tax_and_fees:
         number:
           min: 0
           max: 10
-          step: 0.0001
+          step: any
           mode: box
           unit_of_measurement: SEK/kWh
       name: Energy tax (ex VAT)
@@ -117,7 +117,7 @@ sync_nordpool_tax_and_fees:
         number:
           min: 0
           max: 10
-          step: 0.0001
+          step: any
           mode: box
           unit_of_measurement: SEK/kWh
       name: Grid transfer fee (ex VAT)
@@ -127,7 +127,7 @@ sync_nordpool_tax_and_fees:
         number:
           min: 0
           max: 10
-          step: 0.0001
+          step: any
           mode: box
           unit_of_measurement: SEK/kWh
       name: Supplier markup (ex VAT)
@@ -137,7 +137,7 @@ sync_nordpool_tax_and_fees:
         number:
           min: 0
           max: 10
-          step: 0.0001
+          step: any
           mode: box
           unit_of_measurement: SEK/kWh
       name: Sell grid compensation (low load)
@@ -147,7 +147,7 @@ sync_nordpool_tax_and_fees:
         number:
           min: 0
           max: 10
-          step: 0.0001
+          step: any
           mode: box
           unit_of_measurement: SEK/kWh
       name: Sell grid compensation (high load)
@@ -158,7 +158,7 @@ sync_nordpool_tax_and_fees:
         number:
           min: 0
           max: 10
-          step: 0.0001
+          step: any
           mode: box
           unit_of_measurement: SEK/kWh
       name: Sell tax subsidy
