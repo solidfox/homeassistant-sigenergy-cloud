@@ -5,11 +5,15 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
-from homeassistant.helpers import entity_registry as er
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import entity_registry as er
 from sigenergy_cloud import (
     InstantManualControl,
     InstantManualMode,
@@ -17,11 +21,15 @@ from sigenergy_cloud import (
     SigenergyCloudClient,
     SigenergyCloudError,
 )
-import voluptuous as vol
 
-from .const import CONF_REGION, DOMAIN
+from .const import (
+    CONF_REGION,
+    DOMAIN,
+    enabled_modules_from_options,
+)
 from .coordinator import SigenSettingsCoordinator, SigenStatusCoordinator
 from .data import SigenData
+from .session import SigenergyCloudSession
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -40,6 +48,8 @@ PLATFORMS: list[Platform] = [
 
 SERVICE_SET_INSTANT_MANUAL_CONTROL = "set_instant_manual_control"
 SERVICE_DISABLE_INSTANT_MANUAL_CONTROL = "disable_instant_manual_control"
+SERVICE_REFRESH_DEVICE_STATUS = "refresh_device_status"
+SERVICE_SYNC_NORDPOOL_TAX_AND_FEES = "sync_nordpool_tax_and_fees"
 
 _INSTANT_MANUAL_MODE_ALIASES = {
     "0": InstantManualMode.CHARGING,
@@ -60,7 +70,9 @@ _INSTANT_MANUAL_MODE_ALIASES = {
 
 _SET_INSTANT_MANUAL_SCHEMA = vol.Schema(
     {
-        vol.Required("mode"): vol.All(str, vol.Lower, vol.In(_INSTANT_MANUAL_MODE_ALIASES)),
+        vol.Required("mode"): vol.All(
+            str, vol.Lower, vol.In(_INSTANT_MANUAL_MODE_ALIASES)
+        ),
         vol.Optional("duration_minutes", default=30): vol.All(
             vol.Coerce(int), vol.Range(min=30, max=120)
         ),
@@ -73,6 +85,36 @@ _SET_INSTANT_MANUAL_SCHEMA = vol.Schema(
 
 _DISABLE_INSTANT_MANUAL_SCHEMA = vol.Schema(
     {
+        vol.Optional("entry_id"): cv.string,
+    }
+)
+
+_REFRESH_DEVICE_STATUS_SCHEMA = vol.Schema(
+    {
+        vol.Optional("duration_seconds", default=180): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=600)
+        ),
+        vol.Optional("entry_id"): cv.string,
+    }
+)
+
+_SYNC_NORDPOOL_TAX_AND_FEES_SCHEMA = vol.Schema(
+    {
+        vol.Required("vat_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Required("energy_tax_sek"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required("grid_fee_sek"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required("markup_sek"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required("sell_grid_comp_low_sek"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Required("sell_grid_comp_high_sek"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("sell_tax_subsidy_sek", default=0.0): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
         vol.Optional("entry_id"): cv.string,
     }
 )
@@ -163,7 +205,7 @@ async def async_setup_entry(
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         region=entry.data.get(CONF_REGION, "eu"),
-        session=async_get_clientsession(hass),
+        session=SigenergyCloudSession(hass),
     )
 
     try:
@@ -173,8 +215,13 @@ async def async_setup_entry(
     except SigenergyCloudError as exc:
         raise ConfigEntryNotReady(exc) from exc
 
-    settings_coordinator = SigenSettingsCoordinator(hass, client)
-    status_coordinator = SigenStatusCoordinator(hass, client)
+    enabled_modules = enabled_modules_from_options(entry.options)
+    settings_coordinator = SigenSettingsCoordinator(
+        hass, client, enabled_modules=enabled_modules
+    )
+    status_coordinator = SigenStatusCoordinator(
+        hass, client, enabled_modules=enabled_modules
+    )
 
     await settings_coordinator.async_config_entry_first_refresh()
     await status_coordinator.async_config_entry_first_refresh()
@@ -214,8 +261,6 @@ async def async_reload_entry(
 
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register station-level Sigenergy services once."""
-    if hass.services.has_service(DOMAIN, SERVICE_SET_INSTANT_MANUAL_CONTROL):
-        return
 
     async def async_set_instant_manual_control(call) -> None:
         entry = _service_config_entry(hass, call.data.get("entry_id"))
@@ -251,21 +296,102 @@ def _async_register_services(hass: HomeAssistant) -> None:
             }
         )
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_INSTANT_MANUAL_CONTROL,
-        async_set_instant_manual_control,
-        schema=_SET_INSTANT_MANUAL_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_DISABLE_INSTANT_MANUAL_CONTROL,
-        async_disable_instant_manual_control,
-        schema=_DISABLE_INSTANT_MANUAL_SCHEMA,
-    )
+    async def async_refresh_device_status(call) -> None:
+        entry = _service_config_entry(hass, call.data.get("entry_id"))
+        data = entry.runtime_data
+        duration = int(call.data.get("duration_seconds", 180))
+        await data.status_coordinator.async_request_device_status_poll(
+            source="service_refresh",
+            duration_s=float(duration),
+            enable_fast_poll=duration > 0,
+        )
+
+    async def async_sync_nordpool_tax_and_fees(call) -> None:
+        """Push Almis-style Nord Pool buy/sell tax+fee model into Sigen AI."""
+        from .elec_price import (  # noqa: PLC0415
+            DIRECTION_BUY,
+            DIRECTION_SELL,
+            build_buy_tax_and_fee,
+            build_sell_tax_and_fee,
+        )
+
+        entry = _service_config_entry(hass, call.data.get("entry_id"))
+        client = entry.runtime_data.client
+        buy_payload = build_buy_tax_and_fee(
+            vat_percent=call.data["vat_percent"],
+            energy_tax_sek=call.data["energy_tax_sek"],
+            grid_fee_sek=call.data["grid_fee_sek"],
+            markup_sek=call.data["markup_sek"],
+        )
+        sell_payload = build_sell_tax_and_fee(
+            grid_comp_low_sek=call.data["sell_grid_comp_low_sek"],
+            grid_comp_high_sek=call.data["sell_grid_comp_high_sek"],
+            tax_subsidy_sek=call.data.get("sell_tax_subsidy_sek", 0.0),
+        )
+        try:
+            set_tax = getattr(client, "set_electricity_tax_and_fee", None)
+            if set_tax is not None:
+                await set_tax(DIRECTION_BUY, buy_payload)
+                await set_tax(DIRECTION_SELL, sell_payload)
+            else:
+                # sigenergy-cloud < 0.1.7 fallback using transport helpers.
+                station_id = int(client.station_id)
+                await client._envelope(  # noqa: SLF001
+                    "POST",
+                    "electricity-price/api/tax-and-fee",
+                    json={
+                        "stationId": station_id,
+                        "directionType": DIRECTION_BUY,
+                        "taxAndFee": buy_payload,
+                    },
+                )
+                await client._envelope(  # noqa: SLF001
+                    "POST",
+                    "electricity-price/api/tax-and-fee",
+                    json={
+                        "stationId": station_id,
+                        "directionType": DIRECTION_SELL,
+                        "taxAndFee": sell_payload,
+                    },
+                )
+        except SigenergyCloudError as exc:
+            raise HomeAssistantError(
+                f"Failed to sync Sigenergy tax/fees: {exc}"
+            ) from exc
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_INSTANT_MANUAL_CONTROL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_INSTANT_MANUAL_CONTROL,
+            async_set_instant_manual_control,
+            schema=_SET_INSTANT_MANUAL_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_DISABLE_INSTANT_MANUAL_CONTROL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DISABLE_INSTANT_MANUAL_CONTROL,
+            async_disable_instant_manual_control,
+            schema=_DISABLE_INSTANT_MANUAL_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_DEVICE_STATUS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH_DEVICE_STATUS,
+            async_refresh_device_status,
+            schema=_REFRESH_DEVICE_STATUS_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_SYNC_NORDPOOL_TAX_AND_FEES):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SYNC_NORDPOOL_TAX_AND_FEES,
+            async_sync_nordpool_tax_and_fees,
+            schema=_SYNC_NORDPOOL_TAX_AND_FEES_SCHEMA,
+        )
 
 
-def _service_config_entry(hass: HomeAssistant, entry_id: str | None) -> SigenConfigEntry:
+def _service_config_entry(
+    hass: HomeAssistant, entry_id: str | None
+) -> SigenConfigEntry:
     """Return the target config entry for a station-level service call."""
     if entry_id:
         entry = hass.config_entries.async_get_entry(entry_id)
@@ -279,5 +405,6 @@ def _service_config_entry(hass: HomeAssistant, entry_id: str | None) -> SigenCon
         if getattr(entry, "runtime_data", None) is not None
     ]
     if len(loaded_entries) != 1:
-        raise HomeAssistantError("Specify entry_id when multiple Sigenergy entries are loaded")
+        msg = "Specify entry_id when multiple Sigenergy entries are loaded"
+        raise HomeAssistantError(msg)
     return loaded_entries[0]

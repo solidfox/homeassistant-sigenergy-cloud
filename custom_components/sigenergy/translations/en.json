@@ -7,7 +7,8 @@
         "data": {
           "username": "Email address",
           "password": "Password",
-          "region": "Region"
+          "region": "Region",
+          "enabled_modules": "Enabled modules"
         }
       },
       "reauth_confirm": {
@@ -28,6 +29,17 @@
       "reauth_successful": "Re-authentication was successful."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sigenergy Cloud modules",
+        "description": "Choose which cloud-backed modules Home Assistant should keep updated.",
+        "data": {
+          "enabled_modules": "Enabled modules"
+        }
+      }
+    }
+  },
   "selector": {
     "region": {
       "options": {
@@ -35,6 +47,13 @@
         "cn": "China",
         "apac": "Asia-Pacific",
         "us": "United States"
+      }
+    },
+    "enabled_modules": {
+      "options": {
+        "station_settings": "Station settings and controls",
+        "sigen_ai_forecast": "Sigen AI forecast",
+        "evdc": "EVDC charger and V2X"
       }
     }
   },
@@ -45,11 +64,23 @@
       },
       "stop_v2x_discharge": {
         "name": "Stop Forced V2X Discharge"
+      },
+      "restart_aio": {
+        "name": "Restart AIO (power cycle)"
+      },
+      "toggle_aio_power": {
+        "name": "Toggle AIO Power"
+      },
+      "refresh_device_status": {
+        "name": "Refresh Device Status"
       }
     },
     "binary_sensor": {
       "dc_charger_plugged_in": {
         "name": "Plugged In"
+      },
+      "dc_charger_topology_online": {
+        "name": "Topology Online"
       }
     },
     "sensor": {
@@ -71,6 +102,33 @@
       "battery_soc": {
         "name": "Battery SOC"
       },
+      "battery_capacity": {
+        "name": "Battery Capacity"
+      },
+      "export_limit_installer_max": {
+        "name": "Grid Export Limit Installer Max"
+      },
+      "import_limit_installer_max": {
+        "name": "Grid Import Limit Installer Max"
+      },
+      "grid_connection_limit_installer_max": {
+        "name": "Grid Connection Current Installer Max"
+      },
+      "grid_connection_limit_effective": {
+        "name": "Grid Connection Current Effective"
+      },
+      "battery_max_charge_power": {
+        "name": "Battery Max Charge Power Limit"
+      },
+      "battery_max_discharge_power": {
+        "name": "Battery Max Discharge Power Limit"
+      },
+      "solar_power_limit": {
+        "name": "Solar Power Limit"
+      },
+      "backup_reserve": {
+        "name": "Backup Reserve"
+      },
       "solar_power_forecast": {
         "name": "Solar Power Forecast"
       },
@@ -79,6 +137,12 @@
       },
       "battery_soc_forecast": {
         "name": "Battery SOC Forecast"
+      },
+      "buy_price_forecast": {
+        "name": "Buy Price Forecast"
+      },
+      "sell_price_forecast": {
+        "name": "Sell Price Forecast"
       },
       "instant_manual_control": {
         "name": "Instant Manual Control",
@@ -95,6 +159,12 @@
       },
       "ev_soc": {
         "name": "Vehicle SOC"
+      },
+      "topology_device_status": {
+        "name": "Topology Device Status"
+      },
+      "topology_communicate_status": {
+        "name": "Topology Communicate Status"
       },
       "secc_run_state": {
         "name": "SECC State"
@@ -194,6 +264,9 @@
       "import_limit": {
         "name": "Grid Import Limit"
       },
+      "grid_connection_limit": {
+        "name": "Grid Connection Current Limit"
+      },
       "battery_charge_soc": {
         "name": "Battery Charge Limit"
       },
@@ -234,6 +307,9 @@
       },
       "import_limit_enabled": {
         "name": "Grid Import Limit"
+      },
+      "grid_connection_limit_enabled": {
+        "name": "Grid Connection Current Limit"
       },
       "battery_export_enabled": {
         "name": "Block Battery Export to Grid"
