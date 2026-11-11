@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping  # noqa: TC003
 from typing import Any
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession

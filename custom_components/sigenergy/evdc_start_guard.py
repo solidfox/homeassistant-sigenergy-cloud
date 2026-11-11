@@ -34,9 +34,7 @@ class EVDCStartReadiness:
 
 async def _read_start_readiness(client: Any, dc_sn: str) -> EVDCStartReadiness:
     """Read the minimum cloud state needed to decide if EVDC start is safe."""
-    plugged_in = _plug_status_is_plugged_in(
-        await client.dc_plug_status(dc_sn=dc_sn)
-    )
+    plugged_in = _plug_status_is_plugged_in(await client.dc_plug_status(dc_sn=dc_sn))
     if not plugged_in:
         return EVDCStartReadiness(
             plugged_in=plugged_in,
@@ -79,7 +77,9 @@ async def _read_start_readiness(client: Any, dc_sn: str) -> EVDCStartReadiness:
             str(raw_status_text) if raw_status_text is not None else None
         )
     else:
-        charger_status_text = str(charger_status) if charger_status is not None else None
+        charger_status_text = (
+            str(charger_status) if charger_status is not None else None
+        )
 
     return EVDCStartReadiness(
         plugged_in=True,
@@ -115,9 +115,7 @@ class EVDCStartReadyGate:
         try:
             while True:
                 now = time.monotonic()
-                self._snapshot = await _read_start_readiness(
-                    self._client, self._dc_sn
-                )
+                self._snapshot = await _read_start_readiness(self._client, self._dc_sn)
                 if self._snapshot.ready:
                     if self._ready_since is None:
                         self._ready_since = now
