@@ -43,6 +43,7 @@
   "selector": {
     "region": {
       "options": {
+        "aus": "Australia",
         "eu": "Europe",
         "cn": "China",
         "apac": "Asia-Pacific",

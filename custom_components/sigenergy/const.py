@@ -11,8 +11,9 @@ CONF_REGION = "region"
 CONF_ENABLED_MODULES = "enabled_modules"
 SIGENERGY_CLOUD_USER_AGENT = "homeassistant-sigenergy/0.1.2"
 
-REGIONS = ["eu", "cn", "apac", "us"]
+REGIONS = ["aus", "eu", "cn", "apac", "us"]
 REGION_LABELS = {
+    "aus": "Australia",
     "eu": "Europe",
     "cn": "China",
     "apac": "Asia-Pacific",

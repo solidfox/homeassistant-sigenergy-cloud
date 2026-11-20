@@ -83,7 +83,7 @@ _SET_INSTANT_MANUAL_SCHEMA = vol.Schema(
             str, vol.Lower, vol.In(_INSTANT_MANUAL_MODE_ALIASES)
         ),
         vol.Optional("duration_minutes", default=30): vol.All(
-            vol.Coerce(int), vol.Range(min=30, max=120)
+            vol.Coerce(int), vol.Range(min=1, max=1440)
         ),
         vol.Optional("power_limitation_kw"): vol.All(
             vol.Coerce(float), vol.Range(min=0.0)
