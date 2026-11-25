@@ -118,7 +118,8 @@ class OptionsFlowTest(unittest.TestCase):
         entry = types.SimpleNamespace(options={"enabled_modules": ["evdc"]})
 
         flow = config_flow.SigenConfigFlow.async_get_options_flow(entry)
-        # Home Assistant attaches the entry itself after creating the flow.
+        # HA sets the flow's handler to the entry ID and config_entry looks the
+        # entry up from it; the stub's _entry stands in for that lookup.
         flow._entry = entry
         result = asyncio.run(flow.async_step_init())
 
