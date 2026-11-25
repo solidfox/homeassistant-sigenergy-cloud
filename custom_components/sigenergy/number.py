@@ -257,8 +257,7 @@ class SigenPowerLimitNumber(SigenSettingsEntity, NumberEntity):
         limit_data = self.coordinator.data.get(self.entity_description.data_key)
         if not limit_data:
             return None
-        raw = limit_data.get("maxLimitationOwner")
-        return float(raw) if raw is not None else None
+        return _limit_float(limit_data.get("maxLimitationOwner"))
 
     @property
     def native_max_value(self) -> float:

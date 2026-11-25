@@ -283,5 +283,28 @@ class UpdateCachedDataTest(_BackoffResetMixin, unittest.TestCase):
         )
 
 
+def _power_limit(limit_data: dict) -> number.SigenPowerLimitNumber:
+    entity = number.SigenPowerLimitNumber.__new__(number.SigenPowerLimitNumber)
+    entity.coordinator = types.SimpleNamespace(data={"export_limit": limit_data})
+    entity.entity_description = number.POWER_LIMIT_NUMBERS[0]
+    return entity
+
+
+class PowerLimitNumberTest(unittest.TestCase):
+    """Regression test for issue #36 (empty owner grid limit)."""
+
+    def test_unset_owner_limit_is_none(self) -> None:
+        self.assertIsNone(_power_limit({"maxLimitationOwner": ""}).native_value)
+
+    def test_owner_limit_parses(self) -> None:
+        entity = _power_limit({"maxLimitationOwner": "11.500"})
+        self.assertEqual(entity.native_value, 11.5)
+
+    def test_zero_owner_limit_is_zero(self) -> None:
+        self.assertEqual(
+            _power_limit({"maxLimitationOwner": "0.000"}).native_value, 0.0
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

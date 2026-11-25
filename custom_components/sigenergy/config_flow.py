@@ -53,10 +53,10 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
+        config_entry: config_entries.ConfigEntry,  # noqa: ARG004
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return SigenOptionsFlowHandler(config_entry)
+        return SigenOptionsFlowHandler()
 
     async def async_step_user(
         self,
@@ -206,9 +206,6 @@ class SigenConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class SigenOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Sigenergy options."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
 
     async def async_step_init(
         self,
