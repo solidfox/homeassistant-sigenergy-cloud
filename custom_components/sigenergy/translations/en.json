@@ -285,6 +285,12 @@
       "battery_backup_soc": {
         "name": "Battery Backup SOC"
       },
+      "battery_max_charge_power": {
+        "name": "Battery Charge Power Limit"
+      },
+      "battery_max_discharge_power": {
+        "name": "Battery Discharge Power Limit"
+      },
       "dc_charger_max_power": {
         "name": "Max Charge Power"
       },

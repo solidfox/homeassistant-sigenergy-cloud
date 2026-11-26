@@ -16,6 +16,11 @@ battery, grid, PV, smart load, and DC charger controls in Home Assistant.
   EVDC/V2X data, so unused API groups can be disabled from integration options.
 - Energy flow sensors for PV, grid, load, battery, battery SOC, and EV charging.
 - Battery SOC, grid import/export, peak shaving, and operational mode controls.
+- Battery charge and discharge power limits ("Battery Power Limit" in the app,
+  kW) as numbers. The number's maximum (100 kW) means no limit: it shows that
+  when no limit is set, and setting it removes the limit. Unlike the local
+  Modbus ESS limits on firmware SPC116/SPC117, these don't need Remote EMS
+  turned on.
 - Grid connection current limit ("Max Grid Connection Current" in the app, A)
   number and enable switch, plus diagnostic sensors for the installer-set
   ceilings of the grid export/import/connection limits, battery and solar power

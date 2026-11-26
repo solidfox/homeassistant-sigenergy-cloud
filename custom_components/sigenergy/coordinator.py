@@ -389,6 +389,17 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data.update(updates)
         self.async_set_updated_data(data)
 
+    def async_update_cached_data(self, label: str, payload: Any) -> None:
+        """
+        Apply a successful cloud write to a slow-cached payload.
+
+        Slow endpoints are re-read only after their own interval, so without
+        this the next settings cycle would serve the pre-write cache again.
+        """
+        self._slow_cache[label] = payload
+        self._slow_cache_updated_at[label] = datetime.now(UTC)
+        self.async_update_local_data({label: payload})
+
     def async_update_local_dc_data(self, dc_sn: str, updates: dict[str, Any]) -> None:
         """Apply optimistic DC-charger setting data after a successful cloud write."""
         data = dict(self.data or {})

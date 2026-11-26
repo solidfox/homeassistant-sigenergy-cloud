@@ -17,7 +17,13 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTime,
 )
-from sigenergy_cloud import BatteryLevelSettings, PeakShavingSlot
+from homeassistant.exceptions import HomeAssistantError
+from sigenergy_cloud import (
+    UNLIMITED_POWER_KW,
+    BatteryLevelSettings,
+    PeakShavingSlot,
+    is_unlimited_power,
+)
 
 from .const import MODULE_EVDC, MODULE_STATION_SETTINGS
 from .entity import SigenDCChargerSettingsEntity, SigenSettingsEntity
@@ -77,6 +83,49 @@ GRID_CONNECTION_LIMIT_NUMBER = SigenNumberDescription(
     native_step=0.1,
     mode=NumberMode.BOX,
     icon="mdi:current-ac",
+)
+
+# ── Battery power limits ──────────────────────────────────────────────────────
+
+# "Battery Power Limit" in the mySigen app (Sigen AI Mode settings), kW. Unlike
+# the local Modbus ESS limits, which firmware SPC116/SPC117 ignores unless Remote
+# EMS is on, these don't need Remote EMS.
+BATTERY_POWER_LIMIT_KEY = "battery_power_limit"
+_BATTERY_POWER_FIELDS = ("batteryMaxChargingPower", "batteryMaxDischargingPower")
+
+
+@dataclass(frozen=True, kw_only=True)
+class SigenBatteryPowerLimitDescription(SigenNumberDescription):
+    value_key: str
+
+
+BATTERY_POWER_LIMIT_NUMBERS: tuple[SigenBatteryPowerLimitDescription, ...] = (
+    SigenBatteryPowerLimitDescription(
+        key="battery_max_charge_power_limit",
+        data_key=BATTERY_POWER_LIMIT_KEY,
+        value_key="batteryMaxChargingPower",
+        translation_key="battery_max_charge_power",
+        device_class=NumberDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        native_min_value=0.0,
+        native_max_value=100.0,
+        native_step=0.1,
+        mode=NumberMode.BOX,
+        icon="mdi:battery-arrow-up-outline",
+    ),
+    SigenBatteryPowerLimitDescription(
+        key="battery_max_discharge_power_limit",
+        data_key=BATTERY_POWER_LIMIT_KEY,
+        value_key="batteryMaxDischargingPower",
+        translation_key="battery_max_discharge_power",
+        device_class=NumberDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        native_min_value=0.0,
+        native_max_value=100.0,
+        native_step=0.1,
+        mode=NumberMode.BOX,
+        icon="mdi:battery-arrow-down-outline",
+    ),
 )
 
 # ── Battery SOC levels ────────────────────────────────────────────────────────
@@ -151,6 +200,8 @@ async def async_setup_entry(
         )
         for desc in BATTERY_NUMBERS:
             entities.append(SigenBatterySOCNumber(coordinator, station_id, desc))
+        for desc in BATTERY_POWER_LIMIT_NUMBERS:
+            entities.append(SigenBatteryPowerLimitNumber(coordinator, station_id, desc))
 
         # Peak shaving slot numbers — one per slot in the current schedule
         schedule = coordinator.data.get("peak_shaving") if coordinator.data else None
@@ -315,6 +366,86 @@ def _limit_float(raw: Any) -> float | None:
         return float(raw)
     except TypeError, ValueError:
         return None
+
+
+# ── Battery power limit numbers ───────────────────────────────────────────────
+
+
+def _battery_power_limit_kw(raw: Any) -> float | None:
+    """Parse a battery power limit; None means no limit (the cloud's sentinel)."""
+    if is_unlimited_power(raw):
+        return None
+    value = _limit_float(raw)
+    if value is None:
+        msg = f"Unexpected battery power limit from Sigenergy Cloud: {raw!r}"
+        raise HomeAssistantError(msg)
+    return value
+
+
+class SigenBatteryPowerLimitNumber(SigenSettingsEntity, NumberEntity):
+    """
+    Battery max charge or discharge power ("Battery Power Limit" in the app), kW.
+
+    Backed by ``device/energy-profile/battery/limit``. The cloud has no enable
+    flag: "no limit" is the UNLIMITED_POWER_KW sentinel. The number shows its
+    maximum for that, and setting the maximum removes the limit.
+    """
+
+    entity_description: SigenBatteryPowerLimitDescription
+
+    def __init__(
+        self,
+        coordinator: SigenSettingsCoordinator,
+        station_id: str,
+        description: SigenBatteryPowerLimitDescription,
+    ) -> None:
+        super().__init__(coordinator, station_id, description.key)
+        self.entity_description = description
+
+    def _payload(self) -> dict[str, Any]:
+        payload = (self.coordinator.data or {}).get(self.entity_description.data_key)
+        return payload if isinstance(payload, dict) else {}
+
+    @property
+    def native_value(self) -> float | None:
+        raw = self._payload().get(self.entity_description.value_key)
+        if is_unlimited_power(raw):
+            return self.native_max_value
+        return _limit_float(raw)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        raw = self._payload().get(self.entity_description.value_key)
+        return {
+            "unlimited": is_unlimited_power(raw),
+            "source_endpoint": "device/energy-profile/battery/limit",
+        }
+
+    async def async_set_native_value(self, value: float) -> None:
+        payload = self._payload()
+        if not all(field in payload for field in _BATTERY_POWER_FIELDS):
+            # Both limits go in one write; without the other's current value
+            # it would be reset, so wait for a settings poll to read it.
+            msg = "Battery power limits have not been read from Sigenergy Cloud yet"
+            raise HomeAssistantError(msg)
+
+        limits = {
+            field: _battery_power_limit_kw(payload[field])
+            for field in _BATTERY_POWER_FIELDS
+        }
+        new_kw = None if value >= self.native_max_value else value
+        limits[self.entity_description.value_key] = new_kw
+
+        await self.coordinator.client.set_battery_power_limit(
+            max_charge_kw=limits["batteryMaxChargingPower"],
+            max_discharge_kw=limits["batteryMaxDischargingPower"],
+        )
+        # Same string format the cloud returns (and the library sends).
+        new_raw = f"{UNLIMITED_POWER_KW if new_kw is None else new_kw:.3f}"
+        self.coordinator.async_update_cached_data(
+            self.entity_description.data_key,
+            {**payload, self.entity_description.value_key: new_raw},
+        )
 
 
 # ── Battery SOC numbers ───────────────────────────────────────────────────────
