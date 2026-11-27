@@ -207,8 +207,9 @@ class BatteryPowerLimitNumberTest(_BackoffResetMixin, unittest.TestCase):
         self.assertEqual(payload["batteryMaxDischargingPower"], UNLIMITED)
         self.assertTrue(discharge.extra_state_attributes["unlimited"])
 
-    def test_no_write_before_the_limits_are_read(self) -> None:
+    def test_no_write_when_the_limits_cannot_be_read(self) -> None:
         client = _LimitClient("6.000", "4.500")
+        client.payload = {"batteryMaxChargingPower": "6.000"}
         settings = _settings(client)
         settings.data = {}
         charge = number.SigenBatteryPowerLimitNumber(settings, "1", CHARGE)
@@ -216,6 +217,19 @@ class BatteryPowerLimitNumberTest(_BackoffResetMixin, unittest.TestCase):
         with self.assertRaises(HomeAssistantError):
             _set(charge, 3.0)
         self.assertEqual(client.writes, [])
+
+    def test_set_keeps_an_other_limit_changed_since_the_last_poll(self) -> None:
+        client = _LimitClient("6.000", "4.500")
+        settings = _warm(client)
+        charge = number.SigenBatteryPowerLimitNumber(settings, "1", CHARGE)
+        discharge = number.SigenBatteryPowerLimitNumber(settings, "1", DISCHARGE)
+        # Changed in the app; the hourly cache still holds 4.5.
+        client.payload["batteryMaxDischargingPower"] = "0.000"
+
+        _set(charge, 3.0)
+
+        self.assertEqual(client.writes, [{"charge": 3.0, "discharge": 0.0}])
+        self.assertEqual(discharge.native_value, 0.0)
 
     def test_no_write_when_the_other_limit_is_unreadable(self) -> None:
         client = _LimitClient("6.000", "")

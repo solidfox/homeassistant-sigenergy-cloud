@@ -422,30 +422,35 @@ class SigenBatteryPowerLimitNumber(SigenSettingsEntity, NumberEntity):
         }
 
     async def async_set_native_value(self, value: float) -> None:
-        payload = self._payload()
-        if not all(field in payload for field in _BATTERY_POWER_FIELDS):
-            # Both limits go in one write; without the other's current value
-            # it would be reset, so wait for a settings poll to read it.
-            msg = "Battery power limits have not been read from Sigenergy Cloud yet"
-            raise HomeAssistantError(msg)
+        # Both limits go in one write, so the other limit is re-sent. Read it
+        # fresh: the settings cache can be an hour old, and re-sending a stale
+        # value would undo a change made in the app since. The lock keeps two
+        # writes from re-sending each other's old values.
+        async with self.coordinator.battery_power_limit_lock:
+            payload = await self.coordinator.client.battery_power_limit()
+            if not isinstance(payload, dict) or not all(
+                field in payload for field in _BATTERY_POWER_FIELDS
+            ):
+                msg = "Could not read the battery power limits from Sigenergy Cloud"
+                raise HomeAssistantError(msg)
 
-        limits = {
-            field: _battery_power_limit_kw(payload[field])
-            for field in _BATTERY_POWER_FIELDS
-        }
-        new_kw = None if value >= self.native_max_value else value
-        limits[self.entity_description.value_key] = new_kw
+            limits = {
+                field: _battery_power_limit_kw(payload[field])
+                for field in _BATTERY_POWER_FIELDS
+            }
+            new_kw = None if value >= self.native_max_value else value
+            limits[self.entity_description.value_key] = new_kw
 
-        await self.coordinator.client.set_battery_power_limit(
-            max_charge_kw=limits["batteryMaxChargingPower"],
-            max_discharge_kw=limits["batteryMaxDischargingPower"],
-        )
-        # Same string format the cloud returns (and the library sends).
-        new_raw = f"{UNLIMITED_POWER_KW if new_kw is None else new_kw:.3f}"
-        self.coordinator.async_update_cached_data(
-            self.entity_description.data_key,
-            {**payload, self.entity_description.value_key: new_raw},
-        )
+            await self.coordinator.client.set_battery_power_limit(
+                max_charge_kw=limits["batteryMaxChargingPower"],
+                max_discharge_kw=limits["batteryMaxDischargingPower"],
+            )
+            # Same string format the cloud returns (and the library sends).
+            new_raw = f"{UNLIMITED_POWER_KW if new_kw is None else new_kw:.3f}"
+            self.coordinator.async_update_cached_data(
+                self.entity_description.data_key,
+                {**payload, self.entity_description.value_key: new_raw},
+            )
 
 
 # ── Battery SOC numbers ───────────────────────────────────────────────────────

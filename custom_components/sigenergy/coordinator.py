@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -332,6 +333,8 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._slow_cache: dict[str, Any] = {}
         self._slow_cache_updated_at: dict[str, datetime] = {}
         self._slow_refresh_budget = _SLOW_REFRESH_BUDGET
+        # Serialises battery power limit writes; each re-sends the other limit.
+        self.battery_power_limit_lock = asyncio.Lock()
 
     def export_state(self) -> dict[str, Any]:
         """Return last-good data and caches so a reload can start warm."""
@@ -583,7 +586,8 @@ class SigenSettingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             self.client.grid_connection_limit(),
                             "grid_connection_limit",
                         ),
-                        # Read-only ceilings that change rarely; refresh hourly.
+                        # Settings that change rarely; refresh hourly. Battery
+                        # power limit writes update this cache themselves.
                         "battery_power_limit": await self._cached_data(
                             "battery_power_limit",
                             self.client.battery_power_limit,
@@ -911,7 +915,9 @@ class SigenStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "battery_power": flow.get("batteryPower", last.get("battery_power")),
                 "battery_soc": flow.get("batterySoc", last.get("battery_soc")),
                 # This poll's value only: a stale onGrid must never vouch for the grid.
-                "on_grid": flow["onGrid"] if isinstance(flow.get("onGrid"), bool) else None,
+                "on_grid": flow["onGrid"]
+                if isinstance(flow.get("onGrid"), bool)
+                else None,
                 "on_off_grid_status": flow.get("onOffGridStatus"),
                 "dc_chargers": {},
             }
